@@ -1,0 +1,11 @@
+{
+  "doc_id": "doc_20260218_235746_testtxt",
+  "title": "test.txt",
+  "doc_type": "other",
+  "content_hash": "a1fff0ffefb9eace7230c24e50731f0a91c62f9cefdfe77121c2f607125dffae",
+  "created_at": "2026-02-18T23:57:46.456533",
+  "total_chunks": 1,
+  "source_file": "a1fff0ffefb9eace_test.txt",
+  "status": "indexed",
+  "content_preview": "test content\n"
+}

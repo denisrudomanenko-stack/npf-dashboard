@@ -1,0 +1,55 @@
+#!/bin/bash
+# NPF Project - Главный скрипт управления
+# Использование: ./npf [команда]
+
+cd "$(dirname "$0")"
+
+case "$1" in
+    start|s)
+        ./scripts/session-start.sh
+        ;;
+    end|e)
+        shift
+        ./scripts/session-end.sh "$*"
+        ;;
+    backup|b)
+        ./scripts/backup.sh
+        ;;
+    restore|r)
+        ./scripts/restore.sh "$2"
+        ;;
+    up|u)
+        docker compose up -d
+        ;;
+    down|d)
+        docker compose down
+        ;;
+    logs|l)
+        docker compose logs -f backend
+        ;;
+    build)
+        docker compose build && docker compose up -d
+        ;;
+    *)
+        echo "╔══════════════════════════════════════════╗"
+        echo "║        NPF Project - Команды             ║"
+        echo "╠══════════════════════════════════════════╣"
+        echo "║                                          ║"
+        echo "║  ./npf start    - Начать сессию          ║"
+        echo "║  ./npf end      - Завершить сессию       ║"
+        echo "║  ./npf backup   - Создать бэкап          ║"
+        echo "║  ./npf restore  - Восстановить бэкап     ║"
+        echo "║                                          ║"
+        echo "║  ./npf up       - Запустить Docker       ║"
+        echo "║  ./npf down     - Остановить Docker      ║"
+        echo "║  ./npf logs     - Логи backend           ║"
+        echo "║  ./npf build    - Пересобрать проект     ║"
+        echo "║                                          ║"
+        echo "╚══════════════════════════════════════════╝"
+        echo ""
+        echo "Примеры:"
+        echo "  ./npf start"
+        echo "  ./npf end \"Добавил новую фичу\""
+        echo ""
+        ;;
+esac

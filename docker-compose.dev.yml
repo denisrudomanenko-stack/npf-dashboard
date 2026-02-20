@@ -1,0 +1,54 @@
+version: '3.8'
+
+# Development configuration with hot reload
+# Uses host's Ollama instead of containerized version
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3100:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+    environment:
+      - VITE_API_URL=http://localhost:8100
+    depends_on:
+      - backend
+    networks:
+      - npf-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8100:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./data:/app/data
+      - npf_uploads_dev:/app/uploads
+      - npf_chroma_dev:/app/chroma_db
+      - npf_db_dev:/app/db
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./db/npf.db
+      - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - npf-network
+
+networks:
+  npf-network:
+    driver: bridge
+
+volumes:
+  npf_uploads_dev:
+  npf_chroma_dev:
+  npf_db_dev:

@@ -1,11 +1,11 @@
 import { Outlet, NavLink } from 'react-router-dom'
 
 const navItems = [
-  { path: '/', label: 'Dashboard' },
-  { path: '/enterprises', label: 'Предприятия' },
-  { path: '/roadmap', label: 'Дорожная карта' },
-  { path: '/documents', label: 'Документы' },
-  { path: '/chat', label: 'AI Ассистент' },
+  { path: '/', label: 'Dashboard', tooltip: 'Дорожная карта развития корпоративного блока НПФ: KPI, timeline, pipeline предприятий, воронка продаж, матрица рисков и ключевые вехи.' },
+  { path: '/enterprises', label: 'Предприятия', tooltip: 'Реестр корпоративных клиентов НПФ: управление списком предприятий, отслеживание статусов (потенциал, переговоры, пилот, активный), импорт данных из Excel/CSV.' },
+  { path: '/documents', label: 'Документы', tooltip: 'База знаний для AI-ассистента (RAG): загрузка регламентов, презентаций, FAQ и других документов. Векторизация для семантического поиска, OCR для сканированных PDF.' },
+  { path: '/models', label: 'Модели', tooltip: 'Финансовые модели и калькуляторы: МГД (минимальная гарантированная доходность), стресс-тесты портфеля, юнит-экономика КПП, оценка инфраструктуры.' },
+  { path: '/chat', label: 'AI Ассистент', tooltip: 'Интеллектуальный помощник для консультаций по продуктам НПФ (КПП, ПДС). Использует базу знаний для точных ответов. Поддержка нескольких LLM-моделей.' },
 ]
 
 function Layout() {
@@ -19,6 +19,7 @@ function Layout() {
               <NavLink
                 key={item.path}
                 to={item.path}
+                title={item.tooltip}
                 className={({ isActive }) =>
                   `nav-link ${isActive ? 'active' : ''}`
                 }
@@ -33,11 +34,19 @@ function Layout() {
         <Outlet />
       </main>
       <style>{`
+        .layout {
+          min-height: 100vh;
+        }
         .header {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 1000;
           background: var(--primary);
           color: white;
           padding: 1rem 0;
-          margin-bottom: 2rem;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         }
         .header-content {
           display: flex;
@@ -64,6 +73,7 @@ function Layout() {
           border-bottom-color: white;
         }
         .main {
+          padding-top: 73px;
           padding-bottom: 2rem;
         }
       `}</style>

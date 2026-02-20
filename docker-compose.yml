@@ -6,28 +6,55 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:80"
+      - "3100:80"
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=http://localhost:8000
+    networks:
+      - npf-network
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8100:8000"
     volumes:
       - ./data:/app/data
-      - ./uploads:/app/uploads
-      - chroma_data:/app/chroma_db
+      - ./db:/app/db              # БД на диске хоста
+      - ./chroma_db:/app/chroma_db # ChromaDB на диске хоста
+      - npf_uploads:/app/uploads
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./npf.db
+      - DATABASE_URL=sqlite+aiosqlite:///./db/npf.db
       - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OLLAMA_BASE_URL=http://ollama:11434
     env_file:
       - .env
+    depends_on:
+      - ollama
+    networks:
+      - npf-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11435:11434"
+    volumes:
+      - npf_ollama:/root/.ollama
+    networks:
+      - npf-network
+    # For NVIDIA GPU support on Linux, uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+networks:
+  npf-network:
+    driver: bridge
 
 volumes:
-  chroma_data:
+  npf_uploads:
+  npf_ollama:

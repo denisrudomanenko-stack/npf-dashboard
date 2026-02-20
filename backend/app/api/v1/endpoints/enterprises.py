@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List
 import pandas as pd
 import io
 
 from app.database import get_db
 from app.models.enterprise import Enterprise, EnterpriseStatus
-from app.schemas.enterprise import EnterpriseCreate, EnterpriseUpdate, EnterpriseResponse
+from app.models.interaction import Interaction
+from app.schemas.enterprise import EnterpriseCreate, EnterpriseUpdate, EnterpriseResponse, InteractionCreate, InteractionResponse
 
 router = APIRouter()
 
@@ -19,7 +21,7 @@ async def get_enterprises(
     status: EnterpriseStatus = None,
     db: AsyncSession = Depends(get_db)
 ):
-    query = select(Enterprise)
+    query = select(Enterprise).options(selectinload(Enterprise.interactions))
     if status:
         query = query.where(Enterprise.status == status)
     query = query.offset(skip).limit(limit)
@@ -29,7 +31,11 @@ async def get_enterprises(
 
 @router.get("/{enterprise_id}", response_model=EnterpriseResponse)
 async def get_enterprise(enterprise_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Enterprise).where(Enterprise.id == enterprise_id))
+    result = await db.execute(
+        select(Enterprise)
+        .options(selectinload(Enterprise.interactions))
+        .where(Enterprise.id == enterprise_id)
+    )
     enterprise = result.scalar_one_or_none()
     if not enterprise:
         raise HTTPException(status_code=404, detail="Enterprise not found")
@@ -109,3 +115,83 @@ async def import_enterprises(
 
     await db.commit()
     return {"message": f"Imported {imported} enterprises"}
+
+
+# --- Interactions ---
+
+@router.get("/{enterprise_id}/interactions", response_model=List[InteractionResponse])
+async def get_interactions(enterprise_id: int, db: AsyncSession = Depends(get_db)):
+    """Get all interactions for an enterprise"""
+    result = await db.execute(
+        select(Interaction)
+        .where(Interaction.enterprise_id == enterprise_id)
+        .order_by(Interaction.date.desc())
+    )
+    return result.scalars().all()
+
+
+@router.post("/{enterprise_id}/interactions", response_model=InteractionResponse)
+async def create_interaction(
+    enterprise_id: int,
+    interaction: InteractionCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Add a new interaction to an enterprise"""
+    # Check enterprise exists
+    result = await db.execute(select(Enterprise).where(Enterprise.id == enterprise_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Enterprise not found")
+
+    db_interaction = Interaction(
+        enterprise_id=enterprise_id,
+        **interaction.model_dump()
+    )
+    db.add(db_interaction)
+    await db.commit()
+    await db.refresh(db_interaction)
+    return db_interaction
+
+
+@router.put("/{enterprise_id}/interactions/{interaction_id}", response_model=InteractionResponse)
+async def update_interaction(
+    enterprise_id: int,
+    interaction_id: int,
+    interaction_data: InteractionCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update an interaction"""
+    result = await db.execute(
+        select(Interaction)
+        .where(Interaction.id == interaction_id, Interaction.enterprise_id == enterprise_id)
+    )
+    interaction = result.scalar_one_or_none()
+    if not interaction:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+
+    for key, value in interaction_data.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(interaction, key, value)
+
+    await db.commit()
+    await db.refresh(interaction)
+    return interaction
+
+
+@router.delete("/{enterprise_id}/interactions/{interaction_id}")
+async def delete_interaction(
+    enterprise_id: int,
+    interaction_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete an interaction"""
+    result = await db.execute(
+        select(Interaction)
+        .where(Interaction.id == interaction_id, Interaction.enterprise_id == enterprise_id)
+    )
+    interaction = result.scalar_one_or_none()
+    if not interaction:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+
+    await db.delete(interaction)
+    await db.commit()
+    return {"message": "Interaction deleted"}

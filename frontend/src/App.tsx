@@ -4,7 +4,9 @@ import Dashboard from './pages/Dashboard'
 import Enterprises from './pages/Enterprises'
 import Roadmap from './pages/Roadmap'
 import Documents from './pages/Documents'
+import Models from './pages/Models'
 import Chat from './pages/Chat'
+import LLMSettings from './pages/LLMSettings'
 
 function App() {
   return (
@@ -14,7 +16,9 @@ function App() {
         <Route path="enterprises" element={<Enterprises />} />
         <Route path="roadmap" element={<Roadmap />} />
         <Route path="documents" element={<Documents />} />
+        <Route path="models" element={<Models />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="settings/llm" element={<LLMSettings />} />
       </Route>
     </Routes>
   )

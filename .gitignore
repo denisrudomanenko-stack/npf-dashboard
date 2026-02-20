@@ -36,9 +36,15 @@ logs/
 # ChromaDB
 chroma_db/
 
+# Database (хранится локально, не в git)
+db/
+
 # Uploads
 uploads/
 temp/
+
+# Backups (большие файлы)
+backups/
 
 # Coverage
 coverage/

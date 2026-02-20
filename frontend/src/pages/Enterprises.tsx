@@ -1,33 +1,293 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { api } from '../services/api'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+// Format number with space separators (Russian locale)
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('ru-RU').format(value).replace(/\u00A0/g, ' ')
+}
+
+// Types
+interface ColumnConfig {
+  id: string
+  label: string
+  visible: boolean
+  sortable: boolean
+}
+
+interface TableSettings {
+  columns: ColumnConfig[]
+  sortBy: string | null
+  sortOrder: 'asc' | 'desc'
+}
+
+interface Interaction {
+  id: number
+  enterprise_id: number
+  interaction_type: 'call' | 'meeting' | 'email' | 'presentation' | 'contract' | 'other'
+  date: string
+  description: string
+  result: string | null
+  created_by: string | null
+  created_at: string
+}
 
 interface Enterprise {
   id: number
   name: string
-  industry: string
-  employee_count: number
-  bank_penetration: number
-  status: string
-  locations: string
+  industry: string | null
+  employee_count: number | null
+  bank_penetration: number | null
+  status: 'prospect' | 'negotiation' | 'pilot' | 'active' | 'inactive'
+  category: 'A' | 'B' | 'V' | 'G'
+  score: number
+  sales_status: 'contact' | 'presentation' | 'negotiation' | 'contract' | 'launched'
+  locations: string | null
+  contact_person: string | null
+  contact_email: string | null
+  contact_phone: string | null
+  notes: string | null
+  manager: string | null
+  created_at: string | null
+  updated_at: string | null
+  interactions: Interaction[]
+}
+
+// Default columns configuration
+const defaultColumns: ColumnConfig[] = [
+  { id: 'category', label: 'Категория', visible: true, sortable: true },
+  { id: 'name', label: 'Наименование', visible: true, sortable: true },
+  { id: 'industry', label: 'Отрасль', visible: true, sortable: true },
+  { id: 'employee_count', label: 'Численность', visible: true, sortable: true },
+  { id: 'manager', label: 'Менеджер', visible: true, sortable: true },
+  { id: 'score', label: 'Балл', visible: true, sortable: true },
+  { id: 'sales_status', label: 'Этап продаж', visible: true, sortable: true },
+  { id: 'status', label: 'Статус', visible: true, sortable: true },
+  { id: 'bank_penetration', label: 'Проникн. ЗП', visible: false, sortable: true },
+  { id: 'locations', label: 'Площадки', visible: false, sortable: false },
+  { id: 'contact_person', label: 'Контакт', visible: false, sortable: true },
+  { id: 'contact_phone', label: 'Телефон', visible: false, sortable: false },
+  { id: 'contact_email', label: 'Email', visible: false, sortable: false },
+]
+
+const defaultEnterprise: Partial<Enterprise> = {
+  name: '',
+  industry: '',
+  employee_count: 0,
+  bank_penetration: 0,
+  status: 'prospect',
+  category: 'V',
+  score: 0,
+  sales_status: 'contact',
+  locations: '',
+  contact_person: '',
+  contact_email: '',
+  contact_phone: '',
+  notes: '',
+  manager: ''
+}
+
+const defaultInteraction: {
+  interaction_type: Interaction['interaction_type']
+  description: string
+  result: string
+  created_by: string
+} = {
+  interaction_type: 'call',
+  description: '',
+  result: '',
+  created_by: ''
+}
+
+const statusLabels: Record<string, string> = {
+  prospect: 'Потенциал',
+  negotiation: 'Переговоры',
+  pilot: 'Пилот',
+  active: 'Активный',
+  inactive: 'Неактивный'
+}
+
+const categoryLabels: Record<string, string> = {
+  A: 'A — Быстрые победы',
+  B: 'B — Рабочие кейсы',
+  V: 'В — Длинные проекты',
+  G: 'Г — Заморозка'
+}
+
+const salesStatusLabels: Record<string, string> = {
+  contact: 'Первый контакт',
+  presentation: 'Презентация',
+  negotiation: 'Переговоры',
+  contract: 'Договор',
+  launched: 'Запущено'
+}
+
+const interactionTypeLabels: Record<string, string> = {
+  call: 'Звонок',
+  meeting: 'Встреча',
+  email: 'Письмо',
+  presentation: 'Презентация',
+  contract: 'Работа с договором',
+  other: 'Прочее'
+}
+
+const interactionTypeIcons: Record<string, string> = {
+  call: '📞',
+  meeting: '🤝',
+  email: '📧',
+  presentation: '📊',
+  contract: '📝',
+  other: '📌'
+}
+
+const salesStages = ['contact', 'presentation', 'negotiation', 'contract', 'launched']
+
+// Sortable column item component
+function SortableColumnItem({ column, onToggle, onRename }: {
+  column: ColumnConfig
+  onToggle: () => void
+  onRename: (label: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: column.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className="sortable-column-item">
+      <span className="drag-handle" {...attributes} {...listeners}>⠿</span>
+      <input
+        type="checkbox"
+        checked={column.visible}
+        onChange={onToggle}
+      />
+      <input
+        type="text"
+        value={column.label}
+        onChange={e => onRename(e.target.value)}
+        className="column-label-input"
+      />
+    </div>
+  )
 }
 
 function Enterprises() {
   const [enterprises, setEnterprises] = useState<Enterprise[]>([])
   const [loading, setLoading] = useState(true)
   const [showImport, setShowImport] = useState(false)
+  const [selectedEnterprise, setSelectedEnterprise] = useState<Enterprise | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const [editData, setEditData] = useState<Partial<Enterprise>>(defaultEnterprise)
+  const [saving, setSaving] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterCategory, setFilterCategory] = useState<string>('')
+  const [filterSalesStatus, setFilterSalesStatus] = useState<string>('')
+
+  // Interaction state
+  const [showAddInteraction, setShowAddInteraction] = useState(false)
+  const [newInteraction, setNewInteraction] = useState(defaultInteraction)
+  const [savingInteraction, setSavingInteraction] = useState(false)
+  const [editingInteraction, setEditingInteraction] = useState<Interaction | null>(null)
+
+  // Table config state
+  const [tableSettings, setTableSettings] = useState<TableSettings>({
+    columns: defaultColumns,
+    sortBy: null,
+    sortOrder: 'asc'
+  })
+  const [showConfigModal, setShowConfigModal] = useState(false)
+  const [tempColumns, setTempColumns] = useState<ColumnConfig[]>([])
+  const [savingConfig, setSavingConfig] = useState(false)
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   useEffect(() => {
     loadEnterprises()
+    loadTableConfig()
   }, [])
 
   const loadEnterprises = async () => {
     try {
-      const response = await api.get('/enterprises')
-      setEnterprises(response.data)
+      const response = await api.get('/enterprises/')
+      setEnterprises(Array.isArray(response.data) ? response.data : [])
     } catch (error) {
       console.error('Failed to load enterprises:', error)
+      setEnterprises([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadTableConfig = async () => {
+    try {
+      const response = await api.get('/table-config/enterprises')
+      if (response.data && response.data.config) {
+        setTableSettings(response.data.config)
+      }
+    } catch (error) {
+      console.error('Failed to load table config:', error)
+    }
+  }
+
+  const saveTableConfig = async (settings: TableSettings) => {
+    setSavingConfig(true)
+    try {
+      await api.put('/table-config/enterprises', { config: settings })
+      setTableSettings(settings)
+      setShowConfigModal(false)
+    } catch (error) {
+      console.error('Failed to save table config:', error)
+      alert('Ошибка сохранения настроек')
+    } finally {
+      setSavingConfig(false)
+    }
+  }
+
+  const resetTableConfig = async () => {
+    try {
+      await api.delete('/table-config/enterprises')
+      setTableSettings({
+        columns: defaultColumns,
+        sortBy: null,
+        sortOrder: 'asc'
+      })
+      setShowConfigModal(false)
+    } catch (error) {
+      console.error('Failed to reset config:', error)
     }
   }
 
@@ -47,25 +307,283 @@ function Enterprises() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const labels: Record<string, string> = {
-      prospect: 'Потенциал',
-      negotiation: 'Переговоры',
-      pilot: 'Пилот',
-      active: 'Активный',
-    }
-    return <span className={`status-badge status-${status}`}>{labels[status] || status}</span>
+  const openCard = (enterprise: Enterprise) => {
+    setSelectedEnterprise(enterprise)
+    setEditData(enterprise)
+    setEditMode(false)
+    setConfirmDelete(false)
+    setShowAddInteraction(false)
+    setNewInteraction(defaultInteraction)
   }
 
-  if (loading) return <div>Loading...</div>
+  const closeCard = () => {
+    setSelectedEnterprise(null)
+    setEditMode(false)
+    setEditData(defaultEnterprise)
+    setConfirmDelete(false)
+    setShowAddInteraction(false)
+  }
+
+  const openCreateModal = () => {
+    setShowCreateModal(true)
+    setEditData(defaultEnterprise)
+  }
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false)
+    setEditData(defaultEnterprise)
+  }
+
+  const handleSave = async () => {
+    if (!selectedEnterprise) return
+    setSaving(true)
+    try {
+      const response = await api.put(`/enterprises/${selectedEnterprise.id}`, editData)
+      await loadEnterprises()
+      setSelectedEnterprise(response.data)
+      setEditMode(false)
+    } catch (error) {
+      console.error('Failed to save:', error)
+      alert('Ошибка сохранения')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCreate = async () => {
+    if (!editData.name?.trim()) {
+      alert('Введите название предприятия')
+      return
+    }
+    setSaving(true)
+    try {
+      await api.post('/enterprises/', editData)
+      await loadEnterprises()
+      closeCreateModal()
+    } catch (error) {
+      console.error('Failed to create:', error)
+      alert('Ошибка создания')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!selectedEnterprise) return
+    setSaving(true)
+    try {
+      await api.delete(`/enterprises/${selectedEnterprise.id}`)
+      await loadEnterprises()
+      closeCard()
+    } catch (error) {
+      console.error('Failed to delete:', error)
+      alert('Ошибка удаления')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleAddInteraction = async () => {
+    if (!selectedEnterprise || !newInteraction.description.trim()) return
+    setSavingInteraction(true)
+    try {
+      if (editingInteraction) {
+        await api.put(`/enterprises/${selectedEnterprise.id}/interactions/${editingInteraction.id}`, newInteraction)
+      } else {
+        await api.post(`/enterprises/${selectedEnterprise.id}/interactions`, newInteraction)
+      }
+      const response = await api.get(`/enterprises/${selectedEnterprise.id}`)
+      setSelectedEnterprise(response.data)
+      await loadEnterprises()
+      setNewInteraction(defaultInteraction)
+      setShowAddInteraction(false)
+      setEditingInteraction(null)
+    } catch (error) {
+      console.error('Failed to save interaction:', error)
+      alert('Ошибка сохранения записи')
+    } finally {
+      setSavingInteraction(false)
+    }
+  }
+
+  const handleEditInteraction = (interaction: Interaction) => {
+    setEditingInteraction(interaction)
+    setNewInteraction({
+      interaction_type: interaction.interaction_type,
+      description: interaction.description,
+      result: interaction.result || '',
+      created_by: interaction.created_by || ''
+    })
+    setShowAddInteraction(true)
+  }
+
+  const handleCancelInteractionForm = () => {
+    setShowAddInteraction(false)
+    setEditingInteraction(null)
+    setNewInteraction(defaultInteraction)
+  }
+
+  const handleDeleteInteraction = async (interactionId: number) => {
+    if (!selectedEnterprise) return
+    try {
+      await api.delete(`/enterprises/${selectedEnterprise.id}/interactions/${interactionId}`)
+      const response = await api.get(`/enterprises/${selectedEnterprise.id}`)
+      setSelectedEnterprise(response.data)
+      await loadEnterprises()
+    } catch (error) {
+      console.error('Failed to delete interaction:', error)
+    }
+  }
+
+  const handleSort = (columnId: string) => {
+    const column = tableSettings.columns.find(c => c.id === columnId)
+    if (!column?.sortable) return
+
+    const newOrder = tableSettings.sortBy === columnId && tableSettings.sortOrder === 'asc' ? 'desc' : 'asc'
+    const newSettings = {
+      ...tableSettings,
+      sortBy: columnId,
+      sortOrder: newOrder as 'asc' | 'desc'
+    }
+    setTableSettings(newSettings)
+    // Optionally save to backend immediately
+    // saveTableConfig(newSettings)
+  }
+
+  const openConfigModal = () => {
+    setTempColumns([...tableSettings.columns])
+    setShowConfigModal(true)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      setTempColumns((items) => {
+        const oldIndex = items.findIndex(i => i.id === active.id)
+        const newIndex = items.findIndex(i => i.id === over.id)
+        return arrayMove(items, oldIndex, newIndex)
+      })
+    }
+  }
+
+  const toggleColumnVisibility = (columnId: string) => {
+    setTempColumns(cols =>
+      cols.map(c => c.id === columnId ? { ...c, visible: !c.visible } : c)
+    )
+  }
+
+  const renameColumn = (columnId: string, newLabel: string) => {
+    setTempColumns(cols =>
+      cols.map(c => c.id === columnId ? { ...c, label: newLabel } : c)
+    )
+  }
+
+  const getCategoryBadge = (category: string) => {
+    return <span className={`category-badge cat-${category}`}>{category === 'V' ? 'В' : category === 'G' ? 'Г' : category}</span>
+  }
+
+  const getStatusBadge = (status: string) => {
+    return <span className={`status-badge status-${status}`}>{statusLabels[status] || status}</span>
+  }
+
+  const getSalesStatusIndex = (status: string) => salesStages.indexOf(status)
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  // Get cell value for a column
+  const getCellValue = (enterprise: Enterprise, columnId: string) => {
+    switch (columnId) {
+      case 'category':
+        return getCategoryBadge(enterprise.category)
+      case 'name':
+        return <strong>{enterprise.name}</strong>
+      case 'industry':
+        return enterprise.industry || '—'
+      case 'employee_count':
+        return enterprise.employee_count ? formatNumber(enterprise.employee_count) : '—'
+      case 'manager':
+        return enterprise.manager || '—'
+      case 'score':
+        return <span className="score-badge">{enterprise.score}</span>
+      case 'sales_status':
+        return <span className={`sales-badge sales-${enterprise.sales_status}`}>{salesStatusLabels[enterprise.sales_status]}</span>
+      case 'status':
+        return getStatusBadge(enterprise.status)
+      case 'bank_penetration':
+        return enterprise.bank_penetration ? `${enterprise.bank_penetration}%` : '—'
+      case 'locations':
+        return enterprise.locations || '—'
+      case 'contact_person':
+        return enterprise.contact_person || '—'
+      case 'contact_phone':
+        return enterprise.contact_phone || '—'
+      case 'contact_email':
+        return enterprise.contact_email || '—'
+      default:
+        return '—'
+    }
+  }
+
+  // Get raw value for sorting
+  const getSortValue = (enterprise: Enterprise, columnId: string): string | number => {
+    const val = enterprise[columnId as keyof Enterprise]
+    if (val === null || val === undefined) return ''
+    if (typeof val === 'number') return val
+    return String(val).toLowerCase()
+  }
+
+  // Visible columns
+  const visibleColumns = useMemo(() =>
+    tableSettings.columns.filter(c => c.visible),
+    [tableSettings.columns]
+  )
+
+  // Filter and sort enterprises
+  const filteredEnterprises = useMemo(() => {
+    let result = enterprises.filter(e => {
+      const matchesSearch = !searchQuery ||
+        e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (e.industry && e.industry.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (e.manager && e.manager.toLowerCase().includes(searchQuery.toLowerCase()))
+      const matchesCategory = !filterCategory || e.category === filterCategory
+      const matchesSales = !filterSalesStatus || e.sales_status === filterSalesStatus
+      return matchesSearch && matchesCategory && matchesSales
+    })
+
+    // Apply sorting
+    if (tableSettings.sortBy) {
+      result = [...result].sort((a, b) => {
+        const aVal = getSortValue(a, tableSettings.sortBy!)
+        const bVal = getSortValue(b, tableSettings.sortBy!)
+        if (aVal < bVal) return tableSettings.sortOrder === 'asc' ? -1 : 1
+        if (aVal > bVal) return tableSettings.sortOrder === 'asc' ? 1 : -1
+        return 0
+      })
+    }
+
+    return result
+  }, [enterprises, searchQuery, filterCategory, filterSalesStatus, tableSettings.sortBy, tableSettings.sortOrder])
+
+  if (loading) return <div className="loading">Загрузка...</div>
 
   return (
     <div className="enterprises">
       <div className="page-header">
         <h2>Предприятия</h2>
         <div className="actions">
-          <button className="btn btn-primary" onClick={() => setShowImport(!showImport)}>
+          <button className="btn btn-secondary" onClick={() => setShowImport(!showImport)}>
             Импорт Excel
+          </button>
+          <button className="btn btn-primary" onClick={openCreateModal}>
+            + Добавить
           </button>
         </div>
       </div>
@@ -74,37 +592,76 @@ function Enterprises() {
         <div className="card import-card">
           <h4>Импорт из файла</h4>
           <p>Поддерживаются форматы: .xlsx, .xls, .csv</p>
-          <p>Ожидаемые колонки: name/Наименование, industry/Отрасль, employee_count/Численность, bank_penetration/Проникновение ЗП</p>
           <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} />
         </div>
       )}
+
+      {/* Filters */}
+      <div className="filters-row">
+        <input
+          type="text"
+          placeholder="Поиск по названию, отрасли или менеджеру..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="search-input"
+        />
+        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+          <option value="">Все категории</option>
+          <option value="A">A — Быстрые победы</option>
+          <option value="B">B — Рабочие кейсы</option>
+          <option value="V">В — Длинные проекты</option>
+          <option value="G">Г — Заморозка</option>
+        </select>
+        <select value={filterSalesStatus} onChange={e => setFilterSalesStatus(e.target.value)}>
+          <option value="">Все этапы продаж</option>
+          {salesStages.map(s => (
+            <option key={s} value={s}>{salesStatusLabels[s]}</option>
+          ))}
+        </select>
+        <span className="results-count">{filteredEnterprises.length} из {enterprises.length}</span>
+      </div>
 
       <div className="card">
         <table>
           <thead>
             <tr>
-              <th>Наименование</th>
-              <th>Отрасль</th>
-              <th>Численность</th>
-              <th>Проникновение ЗП</th>
-              <th>Статус</th>
+              {visibleColumns.map(col => (
+                <th
+                  key={col.id}
+                  onClick={() => handleSort(col.id)}
+                  className={col.sortable ? 'sortable' : ''}
+                >
+                  {col.label}
+                  {tableSettings.sortBy === col.id && (
+                    <span className="sort-indicator">
+                      {tableSettings.sortOrder === 'asc' ? ' ▲' : ' ▼'}
+                    </span>
+                  )}
+                </th>
+              ))}
+              <th className="settings-th">
+                <button className="btn-settings" onClick={openConfigModal} title="Настроить столбцы">
+                  ⚙️
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {enterprises.length === 0 ? (
+            {filteredEnterprises.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Нет данных. Импортируйте файл с предприятиями.
+                <td colSpan={visibleColumns.length + 1} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                  {enterprises.length === 0
+                    ? 'Нет данных. Импортируйте файл или добавьте предприятие.'
+                    : 'Нет результатов по заданным фильтрам.'}
                 </td>
               </tr>
             ) : (
-              enterprises.map((e) => (
-                <tr key={e.id}>
-                  <td><strong>{e.name}</strong></td>
-                  <td>{e.industry}</td>
-                  <td>{e.employee_count?.toLocaleString()}</td>
-                  <td>{e.bank_penetration ? `${e.bank_penetration}%` : '-'}</td>
-                  <td>{getStatusBadge(e.status)}</td>
+              filteredEnterprises.map((e) => (
+                <tr key={e.id} onClick={() => openCard(e)} className="clickable-row">
+                  {visibleColumns.map(col => (
+                    <td key={col.id}>{getCellValue(e, col.id)}</td>
+                  ))}
+                  <td></td>
                 </tr>
               ))
             )}
@@ -112,26 +669,1190 @@ function Enterprises() {
         </table>
       </div>
 
+      {/* Column Config Modal */}
+      {showConfigModal && (
+        <div className="modal-backdrop" onClick={() => setShowConfigModal(false)}>
+          <div className="config-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Настройка столбцов</h3>
+              <button className="btn-close" onClick={() => setShowConfigModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p className="config-hint">Перетаскивайте для изменения порядка. Снимите галочку, чтобы скрыть столбец.</p>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={tempColumns.map(c => c.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="columns-list">
+                    {tempColumns.map(col => (
+                      <SortableColumnItem
+                        key={col.id}
+                        column={col}
+                        onToggle={() => toggleColumnVisibility(col.id)}
+                        onRename={(label) => renameColumn(col.id, label)}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={resetTableConfig}>
+                Сбросить
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => saveTableConfig({ ...tableSettings, columns: tempColumns })}
+                disabled={savingConfig}
+              >
+                {savingConfig ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Client Card Modal */}
+      {selectedEnterprise && (
+        <div className="modal-backdrop" onClick={closeCard}>
+          <div className="client-card" onClick={e => e.stopPropagation()}>
+            <div className="card-header">
+              <div className="card-title-row">
+                {editMode ? (
+                  <input
+                    type="text"
+                    className="name-input"
+                    value={editData.name || ''}
+                    onChange={e => setEditData({ ...editData, name: e.target.value })}
+                    placeholder="Название предприятия"
+                  />
+                ) : (
+                  <h2>{selectedEnterprise.name}</h2>
+                )}
+                <div className="card-actions">
+                  {!editMode && (
+                    <button className="btn-icon" onClick={() => setEditMode(true)} title="Редактировать">
+                      ✏️
+                    </button>
+                  )}
+                  <button className="btn-close" onClick={closeCard}>✕</button>
+                </div>
+              </div>
+              <div className="card-meta">
+                {getCategoryBadge(selectedEnterprise.category)}
+                <span className="score-display">{selectedEnterprise.score} баллов</span>
+                {selectedEnterprise.manager && (
+                  <span className="manager-badge">👤 {selectedEnterprise.manager}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="card-body">
+              {/* Sales Funnel */}
+              <div className="section">
+                <h3>Воронка продаж</h3>
+                <div className="sales-funnel">
+                  {salesStages.map((stage, idx) => {
+                    const currentIdx = getSalesStatusIndex(editMode ? (editData.sales_status || 'contact') : selectedEnterprise.sales_status)
+                    const isPast = idx < currentIdx
+                    const isCurrent = idx === currentIdx
+                    return (
+                      <div
+                        key={stage}
+                        className={`funnel-stage ${isPast ? 'past' : ''} ${isCurrent ? 'current' : ''} ${editMode ? 'editable' : ''}`}
+                        onClick={() => editMode && setEditData({ ...editData, sales_status: stage as Enterprise['sales_status'] })}
+                        title={salesStatusLabels[stage]}
+                      >
+                        <span className="stage-dot">{isPast ? '✓' : isCurrent ? '●' : '○'}</span>
+                        <span className="stage-label">{salesStatusLabels[stage]}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Main Info */}
+              <div className="section">
+                <h3>Основная информация</h3>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <label>Отрасль</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={editData.industry || ''}
+                        onChange={e => setEditData({ ...editData, industry: e.target.value })}
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.industry || '—'}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Сотрудников</label>
+                    {editMode ? (
+                      <input
+                        type="number"
+                        value={editData.employee_count || ''}
+                        onChange={e => setEditData({ ...editData, employee_count: parseInt(e.target.value) || 0 })}
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.employee_count ? formatNumber(selectedEnterprise.employee_count) : '—'}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Проникновение ЗП</label>
+                    {editMode ? (
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={editData.bank_penetration || ''}
+                        onChange={e => setEditData({ ...editData, bank_penetration: parseFloat(e.target.value) || 0 })}
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.bank_penetration ? `${selectedEnterprise.bank_penetration}%` : '—'}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Категория</label>
+                    {editMode ? (
+                      <select
+                        value={editData.category || 'V'}
+                        onChange={e => setEditData({ ...editData, category: e.target.value as Enterprise['category'] })}
+                      >
+                        {Object.entries(categoryLabels).map(([k, v]) => (
+                          <option key={k} value={k}>{v}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span>{categoryLabels[selectedEnterprise.category]}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Скоринг-балл</label>
+                    {editMode ? (
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={editData.score || 0}
+                        onChange={e => setEditData({ ...editData, score: parseInt(e.target.value) || 0 })}
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.score}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Ответственный менеджер</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={editData.manager || ''}
+                        onChange={e => setEditData({ ...editData, manager: e.target.value })}
+                        placeholder="ФИО менеджера"
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.manager || '—'}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Статус</label>
+                    {editMode ? (
+                      <select
+                        value={editData.status || 'prospect'}
+                        onChange={e => setEditData({ ...editData, status: e.target.value as Enterprise['status'] })}
+                      >
+                        {Object.entries(statusLabels).map(([k, v]) => (
+                          <option key={k} value={k}>{v}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span>{statusLabels[selectedEnterprise.status]}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Площадки</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={editData.locations || ''}
+                        onChange={e => setEditData({ ...editData, locations: e.target.value })}
+                        placeholder="Москва, Санкт-Петербург, ..."
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.locations || '—'}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Contacts */}
+              <div className="section">
+                <h3>Контакты</h3>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <label>Контактное лицо</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={editData.contact_person || ''}
+                        onChange={e => setEditData({ ...editData, contact_person: e.target.value })}
+                        placeholder="ФИО"
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.contact_person || '—'}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Телефон</label>
+                    {editMode ? (
+                      <input
+                        type="tel"
+                        value={editData.contact_phone || ''}
+                        onChange={e => setEditData({ ...editData, contact_phone: e.target.value })}
+                        placeholder="+7 ..."
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.contact_phone || '—'}</span>
+                    )}
+                  </div>
+                  <div className="info-item full-width">
+                    <label>Email</label>
+                    {editMode ? (
+                      <input
+                        type="email"
+                        value={editData.contact_email || ''}
+                        onChange={e => setEditData({ ...editData, contact_email: e.target.value })}
+                        placeholder="email@company.ru"
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.contact_email || '—'}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Interaction History */}
+              <div className="section">
+                <div className="section-header">
+                  <h3>История контактов</h3>
+                  {!editMode && !showAddInteraction && (
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={() => { setShowAddInteraction(true); setEditingInteraction(null); setNewInteraction(defaultInteraction); }}
+                    >
+                      + Добавить
+                    </button>
+                  )}
+                </div>
+
+                {showAddInteraction && (
+                  <div className="add-interaction-form">
+                    <div className="form-title">
+                      {editingInteraction ? '✏️ Редактирование записи' : '➕ Новая запись'}
+                    </div>
+                    <div className="form-row">
+                      <select
+                        value={newInteraction.interaction_type}
+                        onChange={e => setNewInteraction({ ...newInteraction, interaction_type: e.target.value as Interaction['interaction_type'] })}
+                      >
+                        {Object.entries(interactionTypeLabels).map(([k, v]) => (
+                          <option key={k} value={k}>{v}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Автор записи"
+                        value={newInteraction.created_by}
+                        onChange={e => setNewInteraction({ ...newInteraction, created_by: e.target.value })}
+                      />
+                    </div>
+                    <textarea
+                      placeholder="Описание контакта..."
+                      value={newInteraction.description}
+                      onChange={e => setNewInteraction({ ...newInteraction, description: e.target.value })}
+                      rows={2}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Результат/итог (опционально)"
+                      value={newInteraction.result}
+                      onChange={e => setNewInteraction({ ...newInteraction, result: e.target.value })}
+                    />
+                    <div className="form-actions">
+                      <button className="btn btn-secondary btn-sm" onClick={handleCancelInteractionForm}>
+                        Отмена
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleAddInteraction}
+                        disabled={savingInteraction || !newInteraction.description.trim()}
+                      >
+                        {savingInteraction ? 'Сохранение...' : (editingInteraction ? 'Сохранить' : 'Добавить')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="interactions-list">
+                  {(!selectedEnterprise.interactions || selectedEnterprise.interactions.length === 0) ? (
+                    <p className="no-interactions">Нет записей о контактах</p>
+                  ) : (
+                    selectedEnterprise.interactions.map(interaction => (
+                      <div key={interaction.id} className="interaction-item">
+                        <div className="interaction-icon">
+                          {interactionTypeIcons[interaction.interaction_type] || '📌'}
+                        </div>
+                        <div className="interaction-content">
+                          <div className="interaction-header">
+                            <span className="interaction-type">{interactionTypeLabels[interaction.interaction_type]}</span>
+                            <span className="interaction-date">{formatDate(interaction.date)}</span>
+                            {!editMode && (
+                              <div className="interaction-actions">
+                                <button
+                                  className="btn-edit-interaction"
+                                  onClick={() => handleEditInteraction(interaction)}
+                                  title="Редактировать"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  className="btn-delete-interaction"
+                                  onClick={() => handleDeleteInteraction(interaction.id)}
+                                  title="Удалить"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <p className="interaction-description">{interaction.description}</p>
+                          {interaction.result && (
+                            <p className="interaction-result">
+                              <strong>Итог:</strong> {interaction.result}
+                            </p>
+                          )}
+                          {interaction.created_by && (
+                            <span className="interaction-author">— {interaction.created_by}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="section">
+                <h3>Заметки</h3>
+                {editMode ? (
+                  <textarea
+                    value={editData.notes || ''}
+                    onChange={e => setEditData({ ...editData, notes: e.target.value })}
+                    placeholder="Заметки о клиенте..."
+                    rows={3}
+                  />
+                ) : (
+                  <p className="notes-text">{selectedEnterprise.notes || 'Нет заметок'}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="card-footer">
+              {confirmDelete ? (
+                <div className="delete-confirm">
+                  <span>Удалить предприятие?</span>
+                  <button className="btn btn-danger" onClick={handleDelete} disabled={saving}>
+                    {saving ? '...' : 'Да, удалить'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>
+                    Отмена
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
+                    Удалить
+                  </button>
+                  <div className="footer-right">
+                    {editMode ? (
+                      <>
+                        <button className="btn btn-secondary" onClick={() => { setEditMode(false); setEditData(selectedEnterprise); }}>
+                          Отмена
+                        </button>
+                        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                          {saving ? 'Сохранение...' : 'Сохранить'}
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn-primary" onClick={() => setEditMode(true)}>
+                        Редактировать
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Modal */}
+      {showCreateModal && (
+        <div className="modal-backdrop" onClick={closeCreateModal}>
+          <div className="client-card create-card" onClick={e => e.stopPropagation()}>
+            <div className="card-header">
+              <h2>Новое предприятие</h2>
+              <button className="btn-close" onClick={closeCreateModal}>✕</button>
+            </div>
+            <div className="card-body">
+              <div className="section">
+                <div className="info-grid">
+                  <div className="info-item full-width">
+                    <label>Название *</label>
+                    <input
+                      type="text"
+                      value={editData.name || ''}
+                      onChange={e => setEditData({ ...editData, name: e.target.value })}
+                      placeholder="ПАО «Название»"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="info-item">
+                    <label>Отрасль</label>
+                    <input
+                      type="text"
+                      value={editData.industry || ''}
+                      onChange={e => setEditData({ ...editData, industry: e.target.value })}
+                    />
+                  </div>
+                  <div className="info-item">
+                    <label>Сотрудников</label>
+                    <input
+                      type="number"
+                      value={editData.employee_count || ''}
+                      onChange={e => setEditData({ ...editData, employee_count: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="info-item">
+                    <label>Категория</label>
+                    <select
+                      value={editData.category || 'V'}
+                      onChange={e => setEditData({ ...editData, category: e.target.value as Enterprise['category'] })}
+                    >
+                      {Object.entries(categoryLabels).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="info-item">
+                    <label>Ответственный менеджер</label>
+                    <input
+                      type="text"
+                      value={editData.manager || ''}
+                      onChange={e => setEditData({ ...editData, manager: e.target.value })}
+                      placeholder="ФИО менеджера"
+                    />
+                  </div>
+                  <div className="info-item">
+                    <label>Контактное лицо</label>
+                    <input
+                      type="text"
+                      value={editData.contact_person || ''}
+                      onChange={e => setEditData({ ...editData, contact_person: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="card-footer">
+              <button className="btn btn-secondary" onClick={closeCreateModal}>Отмена</button>
+              <button className="btn btn-primary" onClick={handleCreate} disabled={saving || !editData.name?.trim()}>
+                {saving ? 'Создание...' : 'Создать'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
+        .enterprises {
+          padding: 0;
+        }
+        .loading {
+          padding: 40px;
+          text-align: center;
+          color: var(--text-muted);
+        }
         .page-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 1.5rem;
-        }
-        .import-card {
           margin-bottom: 1rem;
         }
+        .page-header h2 {
+          margin: 0;
+        }
+        .actions {
+          display: flex;
+          gap: 8px;
+        }
+        .btn {
+          padding: 8px 16px;
+          border-radius: 6px;
+          font-size: 13px;
+          cursor: pointer;
+          border: none;
+          transition: all 0.2s;
+        }
+        .btn-sm {
+          padding: 5px 10px;
+          font-size: 12px;
+        }
+        .btn-primary {
+          background: var(--primary);
+          color: white;
+        }
+        .btn-primary:hover {
+          opacity: 0.9;
+        }
+        .btn-primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .btn-secondary {
+          background: #f0f0f0;
+          color: var(--text);
+          border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+          background: #e5e5e5;
+        }
+        .btn-danger {
+          background: #dc2626;
+          color: white;
+        }
+        .btn-danger:hover {
+          background: #b91c1c;
+        }
+        .btn-danger-outline {
+          background: white;
+          color: #dc2626;
+          border: 1px solid #dc2626;
+        }
+        .btn-danger-outline:hover {
+          background: #fef2f2;
+        }
+
+        /* Import Card */
+        .import-card {
+          margin-bottom: 1rem;
+          padding: 16px;
+        }
         .import-card h4 {
-          margin-bottom: 0.5rem;
+          margin: 0 0 8px;
         }
         .import-card p {
           color: var(--text-muted);
-          font-size: 0.875rem;
-          margin-bottom: 0.5rem;
+          font-size: 12px;
+          margin: 0 0 8px;
         }
-        .import-card input {
-          margin-top: 0.5rem;
+
+        /* Filters */
+        .filters-row {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 16px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .search-input {
+          flex: 1;
+          min-width: 200px;
+          padding: 8px 12px;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          font-size: 13px;
+        }
+        .filters-row select {
+          padding: 8px 12px;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          font-size: 13px;
+          background: white;
+        }
+        .results-count {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        /* Table */
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        th, td {
+          padding: 10px 12px;
+          text-align: left;
+          border-bottom: 1px solid var(--border);
+        }
+        th {
+          font-size: 11px;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          font-weight: 600;
+          white-space: nowrap;
+        }
+        th.sortable {
+          cursor: pointer;
+          user-select: none;
+        }
+        th.sortable:hover {
+          color: var(--primary);
+        }
+        .sort-indicator {
+          color: var(--primary);
+          font-size: 10px;
+        }
+        .settings-th {
+          width: 40px;
+          text-align: center;
+        }
+        .btn-settings {
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 16px;
+          opacity: 0.6;
+          padding: 4px;
+        }
+        .btn-settings:hover {
+          opacity: 1;
+        }
+        .clickable-row {
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .clickable-row:hover {
+          background: #f8f9fa;
+        }
+
+        /* Badges */
+        .category-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 24px;
+          height: 24px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 700;
+          color: white;
+        }
+        .cat-A { background: #22c55e; }
+        .cat-B { background: #3b82f6; }
+        .cat-V { background: #f59e0b; }
+        .cat-G { background: #6b7280; }
+
+        .status-badge {
+          display: inline-block;
+          padding: 3px 8px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 500;
+        }
+        .status-prospect { background: #e0e7ff; color: #4338ca; }
+        .status-negotiation { background: #fef3c7; color: #d97706; }
+        .status-pilot { background: #dbeafe; color: #2563eb; }
+        .status-active { background: #d1fae5; color: #059669; }
+        .status-inactive { background: #f3f4f6; color: #6b7280; }
+
+        .sales-badge {
+          display: inline-block;
+          padding: 3px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 500;
+          background: #f3f4f6;
+          color: var(--text);
+        }
+        .sales-launched {
+          background: #d1fae5;
+          color: #059669;
+        }
+        .sales-contract {
+          background: #dbeafe;
+          color: #2563eb;
+        }
+
+        .score-badge {
+          display: inline-block;
+          padding: 2px 6px;
+          background: #f0f0f0;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .manager-badge {
+          font-size: 13px;
+          color: var(--text);
+          background: #e0e7ff;
+          padding: 2px 8px;
+          border-radius: 4px;
+        }
+
+        /* Config Modal */
+        .config-modal {
+          background: white;
+          border-radius: 12px;
+          width: 100%;
+          max-width: 400px;
+          max-height: 80vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .config-modal .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border);
+        }
+        .config-modal .modal-header h3 {
+          margin: 0;
+          font-size: 16px;
+        }
+        .config-modal .modal-body {
+          padding: 16px 20px;
+          overflow-y: auto;
+          flex: 1;
+        }
+        .config-hint {
+          font-size: 12px;
+          color: var(--text-muted);
+          margin: 0 0 16px;
+        }
+        .columns-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .sortable-column-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 12px;
+          background: #f8f9fa;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+        }
+        .drag-handle {
+          cursor: grab;
+          color: var(--text-muted);
+          font-size: 16px;
+          user-select: none;
+        }
+        .drag-handle:active {
+          cursor: grabbing;
+        }
+        .column-label-input {
+          flex: 1;
+          border: 1px solid transparent;
+          background: transparent;
+          padding: 4px 8px;
+          font-size: 13px;
+          border-radius: 4px;
+        }
+        .column-label-input:focus {
+          outline: none;
+          border-color: var(--primary);
+          background: white;
+        }
+        .config-modal .modal-footer {
+          display: flex;
+          justify-content: space-between;
+          padding: 16px 20px;
+          border-top: 1px solid var(--border);
+        }
+
+        /* Main Modal */
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+
+        /* Client Card */
+        .client-card {
+          background: white;
+          border-radius: 12px;
+          width: 100%;
+          max-width: 700px;
+          max-height: 90vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .create-card {
+          max-width: 500px;
+        }
+        .card-header {
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--border);
+        }
+        .card-title-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+        }
+        .card-header h2 {
+          margin: 0;
+          font-size: 20px;
+        }
+        .name-input {
+          flex: 1;
+          font-size: 20px;
+          font-weight: 600;
+          padding: 4px 8px;
+          border: 1px solid var(--primary);
+          border-radius: 4px;
+        }
+        .card-actions {
+          display: flex;
+          gap: 8px;
+        }
+        .btn-icon {
+          background: none;
+          border: none;
+          font-size: 18px;
+          cursor: pointer;
+          padding: 4px;
+          opacity: 0.6;
+        }
+        .btn-icon:hover {
+          opacity: 1;
+        }
+        .btn-close {
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: var(--text-muted);
+          line-height: 1;
+        }
+        .btn-close:hover {
+          color: var(--text);
+        }
+        .card-meta {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 12px;
+          flex-wrap: wrap;
+        }
+        .score-display {
+          font-size: 13px;
+          color: var(--text-muted);
+          background: #f0f0f0;
+          padding: 2px 8px;
+          border-radius: 4px;
+        }
+
+        .card-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px 24px;
+        }
+        .section {
+          margin-bottom: 24px;
+        }
+        .section:last-child {
+          margin-bottom: 0;
+        }
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+        .section-header h3 {
+          margin: 0;
+        }
+        .section h3 {
+          font-size: 13px;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          margin: 0 0 12px;
+          font-weight: 600;
+        }
+
+        /* Sales Funnel */
+        .sales-funnel {
+          display: flex;
+          gap: 4px;
+        }
+        .funnel-stage {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 12px 8px;
+          background: #f8f9fa;
+          border-radius: 6px;
+          transition: all 0.2s;
+        }
+        .funnel-stage.editable {
+          cursor: pointer;
+        }
+        .funnel-stage.editable:hover {
+          background: #e8e8e8;
+        }
+        .funnel-stage.past {
+          background: #d1fae5;
+        }
+        .funnel-stage.current {
+          background: #dbeafe;
+          border: 2px solid #3b82f6;
+        }
+        .stage-dot {
+          font-size: 16px;
+          margin-bottom: 4px;
+        }
+        .funnel-stage.past .stage-dot {
+          color: #059669;
+        }
+        .funnel-stage.current .stage-dot {
+          color: #3b82f6;
+        }
+        .stage-label {
+          font-size: 10px;
+          text-align: center;
+          color: var(--text-muted);
+        }
+        .funnel-stage.current .stage-label {
+          color: #2563eb;
+          font-weight: 600;
+        }
+
+        /* Info Grid */
+        .info-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+        }
+        .info-item {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .info-item.full-width {
+          grid-column: 1 / -1;
+        }
+        .info-item label {
+          font-size: 11px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+        }
+        .info-item span {
+          font-size: 14px;
+        }
+        .info-item input,
+        .info-item select {
+          padding: 8px 10px;
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          font-size: 14px;
+        }
+        .info-item input:focus,
+        .info-item select:focus {
+          outline: none;
+          border-color: var(--primary);
+        }
+
+        textarea {
+          width: 100%;
+          padding: 10px;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          font-size: 14px;
+          resize: vertical;
+          font-family: inherit;
+        }
+        textarea:focus {
+          outline: none;
+          border-color: var(--primary);
+        }
+        .notes-text {
+          font-size: 14px;
+          color: var(--text-muted);
+          margin: 0;
+          white-space: pre-wrap;
+        }
+
+        /* Interactions */
+        .add-interaction-form {
+          background: #f8f9fa;
+          border-radius: 8px;
+          padding: 12px;
+          margin-bottom: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .add-interaction-form .form-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text);
+          margin-bottom: 4px;
+        }
+        .add-interaction-form .form-row {
+          display: flex;
+          gap: 8px;
+        }
+        .add-interaction-form select,
+        .add-interaction-form input {
+          flex: 1;
+          padding: 8px 10px;
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          font-size: 13px;
+        }
+        .add-interaction-form textarea {
+          font-size: 13px;
+        }
+        .add-interaction-form .form-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+
+        .interactions-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .no-interactions {
+          color: var(--text-muted);
+          font-size: 13px;
+          text-align: center;
+          padding: 20px;
+          margin: 0;
+        }
+        .interaction-item {
+          display: flex;
+          gap: 12px;
+          padding: 12px;
+          background: #f8f9fa;
+          border-radius: 8px;
+          border-left: 3px solid var(--primary);
+        }
+        .interaction-icon {
+          font-size: 20px;
+          flex-shrink: 0;
+        }
+        .interaction-content {
+          flex: 1;
+          min-width: 0;
+        }
+        .interaction-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 4px;
+        }
+        .interaction-type {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--primary);
+        }
+        .interaction-date {
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+        .interaction-actions {
+          margin-left: auto;
+          display: flex;
+          gap: 4px;
+        }
+        .btn-edit-interaction,
+        .btn-delete-interaction {
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          cursor: pointer;
+          font-size: 12px;
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+        .btn-edit-interaction:hover {
+          background: #dbeafe;
+          color: #2563eb;
+        }
+        .btn-delete-interaction:hover {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+        .interaction-description {
+          font-size: 13px;
+          margin: 0 0 4px;
+          color: var(--text);
+        }
+        .interaction-result {
+          font-size: 12px;
+          margin: 0 0 4px;
+          color: #059669;
+        }
+        .interaction-author {
+          font-size: 11px;
+          color: var(--text-muted);
+          font-style: italic;
+        }
+
+        .card-footer {
+          padding: 16px 24px;
+          border-top: 1px solid var(--border);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+        .footer-right {
+          display: flex;
+          gap: 8px;
+        }
+        .delete-confirm {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          width: 100%;
+        }
+        .delete-confirm span {
+          color: #dc2626;
+          font-weight: 500;
+        }
+
+        @media (max-width: 600px) {
+          .info-grid {
+            grid-template-columns: 1fr;
+          }
+          .sales-funnel {
+            flex-wrap: wrap;
+          }
+          .funnel-stage {
+            min-width: calc(33% - 4px);
+          }
         }
       `}</style>
     </div>

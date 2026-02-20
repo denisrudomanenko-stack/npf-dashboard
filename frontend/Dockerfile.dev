@@ -1,0 +1,18 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+RUN npm install
+
+# Copy source
+COPY . .
+
+# Use Docker-specific vite config
+RUN cp vite.config.docker.ts vite.config.ts 2>/dev/null || true
+
+EXPOSE 3000
+
+# Development mode with hot reload
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -3,7 +3,33 @@
     "allow": [
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: NPF Development project structure\n\n- Backend: FastAPI + SQLAlchemy + ChromaDB + Anthropic\n- Frontend: React + TypeScript + Vite + Zustand\n- RAG system for knowledge base\n- Data models: Enterprise, Roadmap, KPP, Document\n- Docker support\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: NPF Development project structure\n\n- Backend: FastAPI + SQLAlchemy + ChromaDB + Anthropic\n- Frontend: React + TypeScript + Vite + Zustand\n- RAG system for knowledge base\n- Data models: Enterprise, Roadmap, KPP, Document\n- Docker support\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(npm install:*)",
+      "Bash(sudo chown:*)",
+      "Bash(uvicorn app.main:app:*)",
+      "Bash(npm run dev:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Bash(curl:*)",
+      "Bash(npm run build:*)",
+      "Bash(chmod:*)",
+      "Bash(iconutil:*)",
+      "Bash(xargs kill:*)",
+      "Bash(open:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(sqlite3:*)",
+      "Bash(pkill:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker:*)",
+      "Bash(head -10 __NEW_LINE_3f8c037af15f4f1c__ echo -e '\\\\n=== ChromaDB \\(dev\\) ===')",
+      "Bash(head -10 __NEW_LINE_3f8c037af15f4f1c__ echo -e '\\\\n=== Uploads \\(current\\) ===')",
+      "Bash(head -10 __NEW_LINE_3f8c037af15f4f1c__ echo -e '\\\\n=== Uploads \\(dev\\) ===')",
+      "Bash(./npf end:*)"
     ]
   }
 }
