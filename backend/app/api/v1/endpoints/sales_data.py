@@ -77,17 +77,39 @@ async def get_aggregated_data(
     db: AsyncSession = Depends(get_db)
 ):
     """Получить агрегированные данные по периодам."""
-    # Для SQLite используем strftime
-    if group_by == "month":
-        period_expr = func.strftime("%Y-%m", SalesData.date)
-    elif group_by == "quarter":
-        period_expr = func.strftime("%Y-Q", SalesData.date) + (
-            (func.cast(func.strftime("%m", SalesData.date), type_=func.Integer) - 1) / 3 + 1
-        ).cast(type_=func.String)
-    else:  # week
-        period_expr = func.strftime("%Y-W%W", SalesData.date)
+    from sqlalchemy import extract, literal_column
+    from app.database import DATABASE_URL
 
-    filters = [func.strftime("%Y", SalesData.date) == str(year)]
+    is_postgres = DATABASE_URL.startswith("postgresql")
+
+    if is_postgres:
+        # PostgreSQL date functions
+        if group_by == "month":
+            period_expr = func.to_char(SalesData.date, 'YYYY-MM')
+        elif group_by == "quarter":
+            period_expr = func.concat(
+                func.to_char(SalesData.date, 'YYYY'),
+                '-Q',
+                func.to_char(SalesData.date, 'Q')
+            )
+        else:  # week
+            period_expr = func.to_char(SalesData.date, 'YYYY-"W"IW')
+
+        year_filter = extract('year', SalesData.date) == year
+    else:
+        # SQLite date functions
+        if group_by == "month":
+            period_expr = func.strftime("%Y-%m", SalesData.date)
+        elif group_by == "quarter":
+            period_expr = func.strftime("%Y-Q", SalesData.date) + (
+                (func.cast(func.strftime("%m", SalesData.date), type_=func.Integer) - 1) / 3 + 1
+            ).cast(type_=func.String)
+        else:  # week
+            period_expr = func.strftime("%Y-W%W", SalesData.date)
+
+        year_filter = func.strftime("%Y", SalesData.date) == str(year)
+
+    filters = [year_filter]
     if track:
         filters.append(SalesData.track == track)
 

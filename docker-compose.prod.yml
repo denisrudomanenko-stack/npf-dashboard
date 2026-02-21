@@ -1,0 +1,87 @@
+version: '3.8'
+
+# Production configuration with PostgreSQL
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - npf-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - npf_uploads:/app/uploads
+      - npf_chroma:/app/chroma_db
+      - ./data/documents:/app/data/documents
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-npf}:${POSTGRES_PASSWORD:-npf_secure_password}@postgres:5432/${POSTGRES_DB:-npf_db}
+      - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - npf-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-npf}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-npf_secure_password}
+      - POSTGRES_DB=${POSTGRES_DB:-npf_db}
+    volumes:
+      - npf_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-npf} -d ${POSTGRES_DB:-npf_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - npf-network
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - npf_ollama_models:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    networks:
+      - npf-network
+    restart: unless-stopped
+    # Для GPU раскомментируйте:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+networks:
+  npf-network:
+    driver: bridge
+
+volumes:
+  npf_postgres_data:
+  npf_uploads:
+  npf_chroma:
+  npf_ollama_models:
