@@ -13,6 +13,7 @@ interface Document {
   status: string
   chunk_count: number
   indexed_at: string | null
+  created_by_id: number | null
   created_at: string
 }
 
@@ -40,7 +41,7 @@ const DOC_TYPES = [
 ]
 
 function Documents() {
-  const { canEdit } = usePermissions()
+  const { canEdit, canVectorize, canEditEntity } = usePermissions()
   const [documents, setDocuments] = useState<Document[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -352,7 +353,7 @@ function Documents() {
                 {documents.map((doc) => (
                   <tr key={doc.id} className={processing === doc.id ? 'processing' : ''}>
                     <td className="doc-name-cell">
-                      {canEdit ? (
+                      {canEditEntity(doc.created_by_id) ? (
                         <div
                           className="doc-name editable"
                           onClick={() => openNamingModal(doc)}
@@ -362,7 +363,7 @@ function Documents() {
                           <span className="edit-icon">✏️</span>
                         </div>
                       ) : (
-                        <div className="doc-name">
+                        <div className="doc-name" title={canEdit ? "Вы можете редактировать только свои документы" : "Только просмотр"}>
                           {doc.title || doc.original_filename}
                         </div>
                       )}
@@ -373,8 +374,8 @@ function Documents() {
                         className="category-select"
                         value={doc.document_type || 'other'}
                         onChange={(e) => handleInlineCategoryChange(doc.id, e.target.value)}
-                        disabled={!canEdit || processing === doc.id}
-                        title={canEdit ? "Выберите категорию документа" : "Только просмотр"}
+                        disabled={!canEditEntity(doc.created_by_id) || processing === doc.id}
+                        title={canEditEntity(doc.created_by_id) ? "Выберите категорию документа" : (canEdit ? "Вы можете редактировать только свои документы" : "Только просмотр")}
                       >
                         {DOC_TYPES.map(t => (
                           <option key={t.value} value={t.value}>{t.label}</option>
@@ -383,12 +384,21 @@ function Documents() {
                     </td>
                     <td>{getStatusBadge(doc)}</td>
                     <td className="actions-cell">
-                      {canEdit && (
+                      {canVectorize ? (
                         <button
                           className="action-btn-text btn-vectorize"
                           onClick={() => openVectorizeModal(doc)}
                           disabled={processing === doc.id || (doc.indexed_at !== null && doc.chunk_count > 0)}
                           title={doc.indexed_at ? `Уже в индексе (${doc.chunk_count} фрагм.)` : `Добавить в поисковый индекс (макс. ${MAX_INDEX_SIZE_MB} МБ)`}
+                        >
+                          🔍 Векторизировать
+                        </button>
+                      ) : canEdit && (
+                        <button
+                          className="action-btn-text btn-vectorize"
+                          disabled
+                          title="Векторизация доступна только администраторам"
+                          style={{ opacity: 0.4, cursor: 'not-allowed' }}
                         >
                           🔍 Векторизировать
                         </button>
@@ -400,12 +410,21 @@ function Documents() {
                       >
                         📖
                       </button>
-                      {canEdit && (
+                      {canEditEntity(doc.created_by_id) ? (
                         <button
                           className="action-btn-icon"
                           onClick={() => handleArchive(doc)}
                           disabled={processing === doc.id || doc.status === 'archived'}
                           title="Переместить в архив"
+                        >
+                          📦
+                        </button>
+                      ) : canEdit && (
+                        <button
+                          className="action-btn-icon"
+                          disabled
+                          title="Вы можете архивировать только свои документы"
+                          style={{ opacity: 0.4, cursor: 'not-allowed' }}
                         >
                           📦
                         </button>
@@ -417,12 +436,21 @@ function Documents() {
                       >
                         ⬇️
                       </button>
-                      {canEdit && (
+                      {canEditEntity(doc.created_by_id) ? (
                         <button
                           className="action-btn-icon btn-delete"
                           onClick={() => handleDelete(doc)}
                           disabled={processing === doc.id}
                           title="Удалить документ"
+                        >
+                          🗑️
+                        </button>
+                      ) : canEdit && (
+                        <button
+                          className="action-btn-icon btn-delete"
+                          disabled
+                          title="Вы можете удалять только свои документы"
+                          style={{ opacity: 0.4, cursor: 'not-allowed' }}
                         >
                           🗑️
                         </button>

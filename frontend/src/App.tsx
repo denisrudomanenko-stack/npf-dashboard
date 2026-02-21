@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import Toast from './components/Toast'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Enterprises from './pages/Enterprises'
@@ -34,9 +35,11 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
+    <>
+      <Toast />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
         path="/"
         element={
           <ProtectedRoute>
@@ -61,6 +64,7 @@ function App() {
         />
       </Route>
     </Routes>
+    </>
   )
 }
 

@@ -70,6 +70,7 @@ class EnterpriseUpdate(BaseModel):
 
 class EnterpriseResponse(EnterpriseBase):
     id: int
+    created_by_id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     interactions: Optional[List[InteractionResponse]] = []

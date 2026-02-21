@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.roadmap import RoadmapItem, Track, RoadmapStatus
 from app.models.user import User
 from app.schemas.roadmap import RoadmapItemCreate, RoadmapItemUpdate, RoadmapItemResponse
-from app.auth.dependencies import get_current_active_user, require_manager
+from app.auth.dependencies import get_current_active_user, require_manager, require_ownership
 
 router = APIRouter()
 
@@ -64,7 +64,7 @@ async def create_roadmap_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager)
 ):
-    db_item = RoadmapItem(**item.model_dump())
+    db_item = RoadmapItem(**item.model_dump(), created_by_id=current_user.id)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
@@ -82,6 +82,9 @@ async def update_roadmap_item(
     db_item = result.scalar_one_or_none()
     if not db_item:
         raise HTTPException(status_code=404, detail="Roadmap item not found")
+
+    # Check ownership (Admin can edit any, Manager can edit only own)
+    require_ownership(db_item, current_user)
 
     for key, value in item.model_dump(exclude_unset=True).items():
         setattr(db_item, key, value)
@@ -102,6 +105,9 @@ async def delete_roadmap_item(
     if not item:
         raise HTTPException(status_code=404, detail="Roadmap item not found")
 
+    # Check ownership (Admin can delete any, Manager can delete only own)
+    require_ownership(item, current_user)
+
     await db.delete(item)
     await db.commit()
     return {"message": "Roadmap item deleted"}
@@ -118,6 +124,9 @@ async def update_roadmap_status(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Roadmap item not found")
+
+    # Check ownership (Admin can update any, Manager can update only own)
+    require_ownership(item, current_user)
 
     item.status = status
     await db.commit()

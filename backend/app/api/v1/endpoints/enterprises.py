@@ -16,7 +16,7 @@ from app.models.interaction import Interaction
 from app.models.user import User
 from app.schemas.enterprise import EnterpriseCreate, EnterpriseUpdate, EnterpriseResponse, InteractionCreate, InteractionResponse
 from app.config import settings
-from app.auth.dependencies import get_current_active_user, require_manager
+from app.auth.dependencies import get_current_active_user, require_manager, require_ownership
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -273,7 +273,7 @@ async def create_enterprise(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager)
 ):
-    db_enterprise = Enterprise(**enterprise.model_dump())
+    db_enterprise = Enterprise(**enterprise.model_dump(), created_by_id=current_user.id)
     db.add(db_enterprise)
     await db.commit()
     await db.refresh(db_enterprise)
@@ -291,6 +291,9 @@ async def update_enterprise(
     db_enterprise = result.scalar_one_or_none()
     if not db_enterprise:
         raise HTTPException(status_code=404, detail="Enterprise not found")
+
+    # Check ownership (Admin can edit any, Manager can edit only own)
+    require_ownership(db_enterprise, current_user)
 
     for key, value in enterprise.model_dump(exclude_unset=True).items():
         setattr(db_enterprise, key, value)
@@ -310,6 +313,9 @@ async def delete_enterprise(
     enterprise = result.scalar_one_or_none()
     if not enterprise:
         raise HTTPException(status_code=404, detail="Enterprise not found")
+
+    # Check ownership (Admin can delete any, Manager can delete only own)
+    require_ownership(enterprise, current_user)
 
     await db.delete(enterprise)
     await db.commit()
@@ -440,7 +446,7 @@ async def import_enterprises(
             if not enterprise_data.get('name'):
                 continue
 
-            enterprise = Enterprise(**enterprise_data)
+            enterprise = Enterprise(**enterprise_data, created_by_id=current_user.id)
             db.add(enterprise)
             imported += 1
 

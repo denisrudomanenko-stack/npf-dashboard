@@ -33,6 +33,7 @@ interface TimelineTask {
   endQ: number
   track: 'internal' | 'external' | 'both'
   status: 'completed' | 'in_progress' | 'planned'
+  created_by_id: number | null
 }
 
 interface Enterprise {
@@ -49,6 +50,7 @@ interface Risk {
   probability: 'low' | 'medium' | 'high'
   impact: 'low' | 'medium' | 'high' | 'critical'
   mitigation: string
+  created_by_id: number | null
 }
 
 interface Milestone {
@@ -56,6 +58,7 @@ interface Milestone {
   month: string
   title: string
   status: 'completed' | 'in_progress' | 'planned'
+  created_by_id: number | null
 }
 
 // Default data (used while loading)
@@ -122,7 +125,7 @@ interface DashboardData {
 }
 
 function Dashboard() {
-  const { canEdit, canAccessSettings } = usePermissions()
+  const { canEdit, canAccessSettings, canEditEntity } = usePermissions()
   const [activeTrack, setActiveTrack] = useState<'all' | 'internal' | 'external'>('all')
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState<NewTaskForm>(emptyTaskForm)
@@ -702,27 +705,58 @@ function Dashboard() {
               </div>
               {canEdit && (
                 <div className="task-actions">
-                  <button
-                    className="action-btn edit"
-                    onClick={() => handleEditTask(task)}
-                    title="Редактировать"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    className="action-btn archive"
-                    onClick={() => setConfirmAction({ type: 'archive', task })}
-                    title="Архивировать"
-                  >
-                    📁
-                  </button>
-                  <button
-                    className="action-btn delete"
-                    onClick={() => setConfirmAction({ type: 'delete', task })}
-                    title="Удалить"
-                  >
-                    ✕
-                  </button>
+                  {canEditEntity(task.created_by_id) ? (
+                    <>
+                      <button
+                        className="action-btn edit"
+                        onClick={() => handleEditTask(task)}
+                        title="Редактировать"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="action-btn archive"
+                        onClick={() => setConfirmAction({ type: 'archive', task })}
+                        title="Архивировать"
+                      >
+                        📁
+                      </button>
+                      <button
+                        className="action-btn delete"
+                        onClick={() => setConfirmAction({ type: 'delete', task })}
+                        title="Удалить"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="action-btn edit"
+                        disabled
+                        title="Вы можете редактировать только свои задачи"
+                        style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="action-btn archive"
+                        disabled
+                        title="Вы можете архивировать только свои задачи"
+                        style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                      >
+                        📁
+                      </button>
+                      <button
+                        className="action-btn delete"
+                        disabled
+                        title="Вы можете удалять только свои задачи"
+                        style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>

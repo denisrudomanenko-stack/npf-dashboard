@@ -9,7 +9,7 @@ from app.models import Enterprise, RoadmapItem, KPPContract, Risk, Milestone
 from app.models.sales_data import SalesData
 from app.models.dashboard_config import DashboardConfig
 from app.models.user import User
-from app.auth.dependencies import get_current_active_user, require_manager
+from app.auth.dependencies import get_current_active_user, require_manager, require_ownership
 
 router = APIRouter()
 
@@ -277,7 +277,8 @@ async def get_timeline_tasks(db: AsyncSession) -> List[Dict[str, Any]]:
             "startQ": get_quarter(item.start_date) if item.start_date else 1,
             "endQ": get_quarter(item.end_date) if item.end_date else 1,
             "track": track,
-            "status": status
+            "status": status,
+            "created_by_id": item.created_by_id
         })
 
     return tasks
@@ -341,7 +342,8 @@ async def get_risks(db: AsyncSession) -> List[Dict[str, Any]]:
             "title": risk.title,
             "probability": risk.probability.value if risk.probability else "medium",
             "impact": risk.impact.value if risk.impact else "medium",
-            "mitigation": risk.mitigation or ""
+            "mitigation": risk.mitigation or "",
+            "created_by_id": risk.created_by_id
         }
         for risk in risks
     ]
@@ -362,7 +364,8 @@ async def get_milestones(db: AsyncSession) -> List[Dict[str, Any]]:
             "id": str(m.id),
             "month": m.month or "",
             "title": m.title,
-            "status": m.status.value if m.status else "planned"
+            "status": m.status.value if m.status else "planned",
+            "created_by_id": m.created_by_id
         }
         for m in milestones
     ]
@@ -411,7 +414,8 @@ async def create_task(
         track=track_enum,
         status=status_enum,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        created_by_id=current_user.id
     )
     db.add(item)
     await db.commit()
@@ -423,7 +427,8 @@ async def create_task(
         "startQ": start_q,
         "endQ": end_q,
         "track": track,
-        "status": status
+        "status": status,
+        "created_by_id": item.created_by_id
     }
 
 
@@ -439,6 +444,9 @@ async def delete_task(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Check ownership (Admin can delete any, Manager can delete only own)
+    require_ownership(item, current_user)
 
     await db.delete(item)
     await db.commit()
@@ -465,6 +473,9 @@ async def update_task(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Check ownership (Admin can update any, Manager can update only own)
+    require_ownership(item, current_user)
 
     year = 2026
     quarter_dates = {
@@ -503,7 +514,8 @@ async def update_task(
         "startQ": get_quarter(item.start_date),
         "endQ": get_quarter(item.end_date),
         "track": "internal" if item.track == Track.INTERNAL_PILOT else "external",
-        "status": item.status.value if item.status else "planned"
+        "status": item.status.value if item.status else "planned",
+        "created_by_id": item.created_by_id
     }
 
 
@@ -521,6 +533,9 @@ async def archive_task(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Check ownership (Admin can archive any, Manager can archive only own)
+    require_ownership(item, current_user)
 
     item.status = RoadmapStatus.CANCELLED
     await db.commit()
@@ -554,7 +569,8 @@ async def get_archived_tasks(
             "startQ": get_quarter(item.start_date),
             "endQ": get_quarter(item.end_date),
             "track": "internal" if item.track == Track.INTERNAL_PILOT else "external",
-            "status": "cancelled"
+            "status": "cancelled",
+            "created_by_id": item.created_by_id
         }
         for item in items
     ]

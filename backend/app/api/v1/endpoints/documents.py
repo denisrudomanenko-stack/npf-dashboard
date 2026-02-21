@@ -17,7 +17,7 @@ from app.models.user import User
 from app.schemas.document import DocumentResponse
 from app.services.document_service import document_service, CHUNK_CONFIG
 from app.config import settings
-from app.auth.dependencies import get_current_active_user, require_manager
+from app.auth.dependencies import get_current_active_user, require_manager, require_admin, require_ownership
 
 router = APIRouter()
 
@@ -156,7 +156,8 @@ async def upload_document(
         title=doc_title,
         description=description,
         content_hash=content_hash,
-        status=DocumentStatus.ACTIVE
+        status=DocumentStatus.ACTIVE,
+        created_by_id=current_user.id
     )
     db.add(doc)
     await db.commit()
@@ -247,7 +248,7 @@ async def reindex_document(
     document_id: int,
     request: ReindexRequest = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_manager)
+    current_user: User = Depends(require_admin)
 ):
     """Re-index a document in the vector database with optional category change."""
     result = await db.execute(select(Document).where(Document.id == document_id))
@@ -310,6 +311,9 @@ async def archive_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    # Check ownership (Admin can archive any, Manager can archive only own)
+    require_ownership(doc, current_user)
+
     doc.status = DocumentStatus.ARCHIVED
     await db.commit()
 
@@ -327,6 +331,9 @@ async def delete_document(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    # Check ownership (Admin can delete any, Manager can delete only own)
+    require_ownership(doc, current_user)
 
     # Remove from vector DB
     indexed_docs = document_service.list_documents()
@@ -480,6 +487,9 @@ async def rename_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    # Check ownership (Admin can rename any, Manager can rename only own)
+    require_ownership(doc, current_user)
+
     old_title = doc.title
     doc.title = new_title
     await db.commit()
@@ -504,6 +514,9 @@ async def change_document_category(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    # Check ownership (Admin can change any, Manager can change only own)
+    require_ownership(doc, current_user)
 
     old_category = doc.document_type.value if doc.document_type else "other"
 

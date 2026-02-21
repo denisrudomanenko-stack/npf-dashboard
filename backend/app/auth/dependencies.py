@@ -89,3 +89,42 @@ async def require_manager(
             detail="Manager access required"
         )
     return current_user
+
+
+def check_ownership(entity, current_user: User) -> bool:
+    """Check if user can edit/delete the entity.
+
+    Returns True if:
+    - User is Admin (can edit everything)
+    - User is Manager AND owns the entity (created_by_id matches)
+
+    Returns False if:
+    - User is Viewer
+    - User is Manager but doesn't own the entity
+    - Entity has no owner (created_by_id is None) and user is not Admin
+    """
+    # Admin can edit everything
+    if current_user.role == UserRole.ADMIN:
+        return True
+
+    # Manager can only edit their own entities
+    if current_user.role == UserRole.MANAGER:
+        # Check if entity has created_by_id attribute
+        if not hasattr(entity, 'created_by_id'):
+            return False
+        # Old records without owner can only be edited by Admin
+        if entity.created_by_id is None:
+            return False
+        return entity.created_by_id == current_user.id
+
+    # Viewer cannot edit anything
+    return False
+
+
+def require_ownership(entity, current_user: User):
+    """Raise 403 if user doesn't have permission to edit/delete the entity."""
+    if not check_ownership(entity, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав на редактирование этой записи"
+        )

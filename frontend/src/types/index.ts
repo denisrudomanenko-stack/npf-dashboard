@@ -10,6 +10,7 @@ export interface Enterprise {
   contact_email: string | null
   contact_phone: string | null
   notes: string | null
+  created_by_id: number | null
   created_at: string
   updated_at: string | null
 }
@@ -29,6 +30,7 @@ export interface RoadmapItem {
   dependencies: string | null
   responsible: string | null
   priority: number
+  created_by_id: number | null
   created_at: string
   updated_at: string | null
 }
@@ -41,12 +43,14 @@ export interface Document {
   filename: string
   original_filename: string | null
   file_type: string | null
+  file_size: number | null
   document_type: DocumentType
   title: string | null
   description: string | null
   status: DocumentStatus
   chunk_count: number
   indexed_at: string | null
+  created_by_id: number | null
   created_at: string
   updated_at: string | null
 }

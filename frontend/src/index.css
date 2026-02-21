@@ -113,3 +113,19 @@ th {
 .status-negotiation { background: #fef3c7; color: #92400e; }
 .status-pilot { background: #dbeafe; color: #1e40af; }
 .status-active { background: #d1fae5; color: #065f46; }
+
+/* Toast animation */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}

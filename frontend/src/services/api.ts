@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { useToastStore } from '../stores/toastStore'
 
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -34,6 +35,14 @@ api.interceptors.response.use(
         window.location.href = '/login'
       }
     }
+
+    // Handle 403 Forbidden - show toast with permission error
+    if (error.response?.status === 403) {
+      const message = error.response?.data?.detail ||
+        'У вас недостаточно прав для выполнения этого действия'
+      useToastStore.getState().show(message, 'warning')
+    }
+
     console.error('API Error:', error.response?.data || error.message)
     return Promise.reject(error)
   }

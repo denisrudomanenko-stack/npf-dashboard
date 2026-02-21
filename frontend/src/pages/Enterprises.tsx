@@ -67,6 +67,7 @@ interface Enterprise {
   contact_phone: string | null
   notes: string | null
   manager: string | null
+  created_by_id: number | null
   created_at: string | null
   updated_at: string | null
   interactions: Interaction[]
@@ -205,7 +206,7 @@ function SortableColumnItem({ column, onToggle, onRename }: {
 }
 
 function Enterprises() {
-  const { canEdit } = usePermissions()
+  const { canEdit, canEditEntity } = usePermissions()
   const [enterprises, setEnterprises] = useState<Enterprise[]>([])
   const [loading, setLoading] = useState(true)
   const [showImport, setShowImport] = useState(false)
@@ -916,8 +917,22 @@ function Enterprises() {
                   <h2>{selectedEnterprise.name}</h2>
                 )}
                 <div className="card-actions">
-                  {canEdit && !editMode && (
-                    <button className="btn-icon" onClick={() => setEditMode(true)} title="Редактировать">
+                  {canEditEntity(selectedEnterprise.created_by_id) && !editMode && (
+                    <button
+                      className="btn-icon"
+                      onClick={() => setEditMode(true)}
+                      title="Редактировать"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                  {canEdit && !canEditEntity(selectedEnterprise.created_by_id) && !editMode && (
+                    <button
+                      className="btn-icon"
+                      disabled
+                      title="Вы можете редактировать только свои записи"
+                      style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                    >
                       ✏️
                     </button>
                   )}
@@ -1284,9 +1299,20 @@ function Enterprises() {
                   </div>
                 ) : (
                   <>
-                    <button className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
-                      Удалить
-                    </button>
+                    {canEditEntity(selectedEnterprise.created_by_id) ? (
+                      <button className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
+                        Удалить
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-danger-outline"
+                        disabled
+                        title="Вы можете удалять только свои записи"
+                        style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                      >
+                        Удалить
+                      </button>
+                    )}
                     <div className="footer-right">
                       {editMode ? (
                         <>

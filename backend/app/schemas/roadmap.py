@@ -38,6 +38,7 @@ class RoadmapItemUpdate(BaseModel):
 
 class RoadmapItemResponse(RoadmapItemBase):
     id: int
+    created_by_id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
