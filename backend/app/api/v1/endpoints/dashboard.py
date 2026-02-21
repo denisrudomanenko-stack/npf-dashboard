@@ -199,7 +199,7 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
             },
             "bankContributions": {
                 "current": round(bank_bank_contributions, 2),
-                "target": targets.get("bank_bank_contributions_target", 25.0)
+                "target": round(bank_employee_contributions_target, 1)
             },
             "dataDate": bank_data_date
         },
