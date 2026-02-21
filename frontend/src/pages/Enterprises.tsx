@@ -58,6 +58,8 @@ interface Enterprise {
   category: 'A' | 'B' | 'V' | 'G'
   score: number
   sales_status: 'contact' | 'presentation' | 'negotiation' | 'contract' | 'launched'
+  inn: string | null
+  holding: string | null
   locations: string | null
   contact_person: string | null
   contact_email: string | null
@@ -73,6 +75,8 @@ interface Enterprise {
 const defaultColumns: ColumnConfig[] = [
   { id: 'category', label: 'Категория', visible: true, sortable: true },
   { id: 'name', label: 'Наименование', visible: true, sortable: true },
+  { id: 'inn', label: 'ИНН', visible: true, sortable: true },
+  { id: 'holding', label: 'Холдинг', visible: true, sortable: true },
   { id: 'industry', label: 'Отрасль', visible: true, sortable: true },
   { id: 'employee_count', label: 'Численность', visible: true, sortable: true },
   { id: 'manager', label: 'Менеджер', visible: true, sortable: true },
@@ -95,6 +99,8 @@ const defaultEnterprise: Partial<Enterprise> = {
   category: 'V',
   score: 0,
   sales_status: 'contact',
+  inn: '',
+  holding: '',
   locations: '',
   contact_person: '',
   contact_email: '',
@@ -211,6 +217,24 @@ function Enterprises() {
   const [filterCategory, setFilterCategory] = useState<string>('')
   const [filterSalesStatus, setFilterSalesStatus] = useState<string>('')
 
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  // Import mapping state
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importPreview, setImportPreview] = useState<{
+    columns: string[]
+    sample_data: Record<string, unknown>[]
+    suggested_mapping: Record<string, string | null>
+    available_fields: Record<string, { label: string; required: boolean }>
+    total_rows: number
+    mapping_method?: 'llm' | 'fallback'
+  } | null>(null)
+  const [importMapping, setImportMapping] = useState<Record<string, string>>({})
+  const [importing, setImporting] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+
   // Interaction state
   const [showAddInteraction, setShowAddInteraction] = useState(false)
   const [newInteraction, setNewInteraction] = useState(defaultInteraction)
@@ -244,6 +268,7 @@ function Enterprises() {
     try {
       const response = await api.get('/enterprises/')
       setEnterprises(Array.isArray(response.data) ? response.data : [])
+      setSelectedIds(new Set()) // Clear selection on reload
     } catch (error) {
       console.error('Failed to load enterprises:', error)
       setEnterprises([])
@@ -291,20 +316,76 @@ function Enterprises() {
     }
   }
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
+    setImportFile(file)
     const formData = new FormData()
     formData.append('file', file)
 
     try {
-      await api.post('/enterprises/import', formData)
-      loadEnterprises()
+      const response = await api.post('/enterprises/import/preview', formData)
+      setImportPreview(response.data)
+      // Convert null values to empty strings for select compatibility
+      const suggestedMapping = response.data.suggested_mapping || {}
+      const cleanedMapping: Record<string, string> = {}
+      for (const [key, value] of Object.entries(suggestedMapping)) {
+        cleanedMapping[key] = (value as string | null) || ''
+      }
+      setImportMapping(cleanedMapping)
+      setShowImportModal(true)
       setShowImport(false)
-    } catch (error) {
-      console.error('Import failed:', error)
+    } catch (error: unknown) {
+      console.error('Preview failed:', error)
+      const err = error as { response?: { data?: { detail?: string } } }
+      alert(err.response?.data?.detail || 'Ошибка чтения файла')
     }
+    // Reset input
+    e.target.value = ''
+  }
+
+  const handleImportConfirm = async () => {
+    if (!importFile || !importPreview) return
+
+    // Validate that name is mapped
+    const nameMapped = Object.values(importMapping).includes('name')
+    if (!nameMapped) {
+      alert('Необходимо сопоставить поле "Наименование"')
+      return
+    }
+
+    setImporting(true)
+    const formData = new FormData()
+    formData.append('file', importFile)
+    formData.append('mapping', JSON.stringify(importMapping))
+
+    try {
+      const response = await api.post('/enterprises/import', formData)
+      alert(response.data.message)
+      loadEnterprises()
+      closeImportModal()
+    } catch (error: unknown) {
+      console.error('Import failed:', error)
+      const err = error as { response?: { data?: { detail?: string } } }
+      alert(err.response?.data?.detail || 'Ошибка импорта')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const closeImportModal = () => {
+    setShowImportModal(false)
+    setImportFile(null)
+    setImportPreview(null)
+    setImportMapping({})
+  }
+
+  const updateMapping = (excelCol: string, fieldKey: string) => {
+    setImportMapping(prev => ({
+      ...prev,
+      [excelCol]: fieldKey
+    }))
   }
 
   const openCard = (enterprise: Enterprise) => {
@@ -435,6 +516,50 @@ function Enterprises() {
     }
   }
 
+  // Multi-select handlers
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredEnterprises.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredEnterprises.map(e => e.id)))
+    }
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Удалить ${selectedIds.size} предприятий?`)) return
+
+    setBulkDeleting(true)
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map(id => api.delete(`/enterprises/${id}`))
+      )
+      await loadEnterprises()
+      setSelectedIds(new Set())
+    } catch (error) {
+      console.error('Bulk delete failed:', error)
+      alert('Ошибка при удалении')
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   const handleSort = (columnId: string) => {
     const column = tableSettings.columns.find(c => c.id === columnId)
     if (!column?.sortable) return
@@ -505,6 +630,10 @@ function Enterprises() {
         return getCategoryBadge(enterprise.category)
       case 'name':
         return <strong>{enterprise.name}</strong>
+      case 'inn':
+        return enterprise.inn || '—'
+      case 'holding':
+        return enterprise.holding || '—'
       case 'industry':
         return enterprise.industry || '—'
       case 'employee_count':
@@ -551,6 +680,8 @@ function Enterprises() {
     let result = enterprises.filter(e => {
       const matchesSearch = !searchQuery ||
         e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (e.inn && e.inn.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (e.holding && e.holding.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (e.industry && e.industry.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (e.manager && e.manager.toLowerCase().includes(searchQuery.toLowerCase()))
       const matchesCategory = !filterCategory || e.category === filterCategory
@@ -592,7 +723,8 @@ function Enterprises() {
         <div className="card import-card">
           <h4>Импорт из файла</h4>
           <p>Поддерживаются форматы: .xlsx, .xls, .csv</p>
-          <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} />
+          <p className="import-hint">После выбора файла откроется окно сопоставления колонок</p>
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} />
         </div>
       )}
 
@@ -600,7 +732,7 @@ function Enterprises() {
       <div className="filters-row">
         <input
           type="text"
-          placeholder="Поиск по названию, отрасли или менеджеру..."
+          placeholder="Поиск по названию, ИНН, холдингу, отрасли или менеджеру..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           className="search-input"
@@ -621,10 +753,31 @@ function Enterprises() {
         <span className="results-count">{filteredEnterprises.length} из {enterprises.length}</span>
       </div>
 
+      {/* Bulk Actions Toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="bulk-toolbar">
+          <span className="bulk-count">Выбрано: {selectedIds.size}</span>
+          <button className="btn btn-danger btn-sm" onClick={handleBulkDelete} disabled={bulkDeleting}>
+            {bulkDeleting ? 'Удаление...' : '🗑️ Удалить выбранные'}
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
+            Снять выделение
+          </button>
+        </div>
+      )}
+
       <div className="card">
         <table>
           <thead>
             <tr>
+              <th className="checkbox-th">
+                <input
+                  type="checkbox"
+                  checked={filteredEnterprises.length > 0 && selectedIds.size === filteredEnterprises.length}
+                  onChange={toggleSelectAll}
+                  title="Выбрать все"
+                />
+              </th>
               {visibleColumns.map(col => (
                 <th
                   key={col.id}
@@ -649,7 +802,7 @@ function Enterprises() {
           <tbody>
             {filteredEnterprises.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length + 1} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                   {enterprises.length === 0
                     ? 'Нет данных. Импортируйте файл или добавьте предприятие.'
                     : 'Нет результатов по заданным фильтрам.'}
@@ -657,11 +810,31 @@ function Enterprises() {
               </tr>
             ) : (
               filteredEnterprises.map((e) => (
-                <tr key={e.id} onClick={() => openCard(e)} className="clickable-row">
+                <tr key={e.id} onClick={() => openCard(e)} className={`clickable-row ${selectedIds.has(e.id) ? 'selected-row' : ''}`}>
+                  <td className="checkbox-cell" onClick={(ev) => ev.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(e.id)}
+                      onChange={() => toggleSelect(e.id)}
+                    />
+                  </td>
                   {visibleColumns.map(col => (
                     <td key={col.id}>{getCellValue(e, col.id)}</td>
                   ))}
-                  <td></td>
+                  <td className="actions-cell">
+                    <button
+                      className="btn-row-delete"
+                      onClick={(ev) => {
+                        ev.stopPropagation()
+                        if (confirm(`Удалить "${e.name}"?`)) {
+                          api.delete(`/enterprises/${e.id}`).then(() => loadEnterprises())
+                        }
+                      }}
+                      title="Удалить"
+                    >
+                      🗑️
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
@@ -780,6 +953,33 @@ function Enterprises() {
               <div className="section">
                 <h3>Основная информация</h3>
                 <div className="info-grid">
+                  <div className="info-item">
+                    <label>ИНН</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={editData.inn || ''}
+                        onChange={e => setEditData({ ...editData, inn: e.target.value })}
+                        placeholder="10 или 12 цифр"
+                        maxLength={12}
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.inn || '—'}</span>
+                    )}
+                  </div>
+                  <div className="info-item">
+                    <label>Холдинг</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={editData.holding || ''}
+                        onChange={e => setEditData({ ...editData, holding: e.target.value })}
+                        placeholder="Группа компаний"
+                      />
+                    ) : (
+                      <span>{selectedEnterprise.holding || '—'}</span>
+                    )}
+                  </div>
                   <div className="info-item">
                     <label>Отрасль</label>
                     {editMode ? (
@@ -1123,6 +1323,25 @@ function Enterprises() {
                     />
                   </div>
                   <div className="info-item">
+                    <label>ИНН</label>
+                    <input
+                      type="text"
+                      value={editData.inn || ''}
+                      onChange={e => setEditData({ ...editData, inn: e.target.value })}
+                      placeholder="10 или 12 цифр"
+                      maxLength={12}
+                    />
+                  </div>
+                  <div className="info-item">
+                    <label>Холдинг</label>
+                    <input
+                      type="text"
+                      value={editData.holding || ''}
+                      onChange={e => setEditData({ ...editData, holding: e.target.value })}
+                      placeholder="Группа компаний"
+                    />
+                  </div>
+                  <div className="info-item">
                     <label>Отрасль</label>
                     <input
                       type="text"
@@ -1173,6 +1392,126 @@ function Enterprises() {
               <button className="btn btn-secondary" onClick={closeCreateModal}>Отмена</button>
               <button className="btn btn-primary" onClick={handleCreate} disabled={saving || !editData.name?.trim()}>
                 {saving ? 'Создание...' : 'Создать'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Mapping Modal */}
+      {showImportModal && importPreview && (
+        <div className="modal-backdrop" onClick={closeImportModal}>
+          <div className="import-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Сопоставление колонок</h3>
+                <span className="import-file-info">
+                  {importFile?.name} — {importPreview.total_rows} строк данных (без заголовка)
+                </span>
+              </div>
+              <button className="btn-close" onClick={closeImportModal}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="mapping-hint">
+                <div className="hint-header">
+                  <span className="hint-icon">{importPreview.mapping_method === 'llm' ? '🤖' : '📋'}</span>
+                  <strong>
+                    {importPreview.mapping_method === 'llm'
+                      ? 'AI проанализировал структуру файла'
+                      : 'Автоматическое сопоставление'}
+                  </strong>
+                  {importPreview.mapping_method === 'llm' && (
+                    <span className="llm-badge">LLM</span>
+                  )}
+                </div>
+                <p>
+                  {importPreview.mapping_method === 'llm'
+                    ? 'Локальная LLM-модель проанализировала заголовки и примеры данных для интеллектуального сопоставления полей.'
+                    : 'Система сопоставила колонки на основе названий заголовков.'}
+                  {' '}Проверьте соответствие и измените при необходимости.
+                </p>
+                <p>Поле "Наименование" <span className="required-star">*</span> обязательно для импорта.</p>
+              </div>
+
+              <div className="mapping-table-wrapper">
+                <table className="mapping-table">
+                  <thead>
+                    <tr>
+                      <th>Заголовок в файле (1-я строка)</th>
+                      <th>Примеры данных (строки 2-3)</th>
+                      <th>Поле в системе</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.columns.map(col => {
+                      const suggestedField = importPreview.suggested_mapping[col]
+                      const currentField = importMapping[col]
+                      const isAutoSuggested = suggestedField && currentField === suggestedField
+                      const isMapped = !!currentField
+
+                      return (
+                        <tr key={col} className={isMapped ? 'row-mapped' : ''}>
+                          <td className="col-name">
+                            {col}
+                            {isAutoSuggested && <span className="auto-badge">авто</span>}
+                          </td>
+                          <td className="col-sample">
+                            {importPreview.sample_data.slice(0, 2).map((row, i) => (
+                              <div key={i} className="sample-value">
+                                {String(row[col] || '—').substring(0, 40)}
+                              </div>
+                            ))}
+                          </td>
+                          <td className="col-mapping">
+                            <select
+                              value={currentField || ''}
+                              onChange={e => updateMapping(col, e.target.value)}
+                              className={`${currentField === 'name' ? 'required-mapped' : ''} ${isMapped ? 'is-mapped' : ''}`}
+                            >
+                              <option value="">— Не импортировать —</option>
+                              {Object.entries(importPreview.available_fields).map(([key, field]) => (
+                                <option key={key} value={key}>
+                                  {field.label} {field.required ? '*' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="col-status">
+                            {currentField === 'name' && <span className="status-icon status-required">✓</span>}
+                            {currentField && currentField !== 'name' && <span className="status-icon status-ok">✓</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mapping-summary">
+                <div className="summary-left">
+                  <span className={Object.values(importMapping).includes('name') ? 'valid' : 'invalid'}>
+                    {Object.values(importMapping).includes('name') ? '✓' : '✗'} Наименование
+                  </span>
+                </div>
+                <div className="summary-right">
+                  <span className="auto-count">
+                    Автоопределено: {Object.entries(importPreview.suggested_mapping).filter(([k, v]) => v && importMapping[k] === v).length}
+                  </span>
+                  <span className="mapped-count">
+                    Всего сопоставлено: {Object.values(importMapping).filter(v => v).length} из {importPreview.columns.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeImportModal}>Отмена</button>
+              <button
+                className="btn btn-primary"
+                onClick={handleImportConfirm}
+                disabled={importing || !Object.values(importMapping).includes('name')}
+              >
+                {importing ? 'Импорт...' : `Импортировать ${importPreview.total_rows} строк`}
               </button>
             </div>
           </div>
@@ -1261,6 +1600,209 @@ function Enterprises() {
           font-size: 12px;
           margin: 0 0 8px;
         }
+        .import-hint {
+          color: #6366f1;
+          font-style: italic;
+        }
+
+        /* Import Modal */
+        .import-modal {
+          background: white;
+          border-radius: 12px;
+          width: 100%;
+          max-width: 800px;
+          max-height: 90vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .import-modal .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--border);
+        }
+        .import-modal .modal-header h3 {
+          margin: 0;
+          font-size: 18px;
+        }
+        .import-file-info {
+          font-size: 12px;
+          color: var(--text-muted);
+          margin-top: 4px;
+          display: block;
+        }
+        .import-modal .modal-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px 24px;
+        }
+        .mapping-hint {
+          font-size: 13px;
+          color: var(--text-muted);
+          margin: 0 0 16px;
+          padding: 12px;
+          background: #f8f9fa;
+          border-radius: 6px;
+        }
+        .mapping-table-wrapper {
+          overflow-x: auto;
+          margin-bottom: 16px;
+        }
+        .mapping-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13px;
+        }
+        .mapping-table th {
+          text-align: left;
+          padding: 10px 12px;
+          background: #f8f9fa;
+          font-weight: 600;
+          font-size: 11px;
+          text-transform: uppercase;
+          color: var(--text-muted);
+        }
+        .mapping-table td {
+          padding: 10px 12px;
+          border-bottom: 1px solid var(--border);
+          vertical-align: top;
+        }
+        .col-name {
+          font-weight: 500;
+          max-width: 200px;
+          word-break: break-word;
+        }
+        .col-sample {
+          max-width: 200px;
+          color: var(--text-muted);
+          font-size: 12px;
+        }
+        .sample-value {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          padding: 2px 0;
+        }
+        .col-mapping select {
+          width: 100%;
+          padding: 8px 10px;
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          font-size: 13px;
+          background: white;
+        }
+        .col-mapping select:focus {
+          outline: none;
+          border-color: var(--primary);
+        }
+        .col-mapping select.required-mapped {
+          border-color: #22c55e;
+          background: #f0fdf4;
+        }
+        .hint-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+          color: var(--text);
+        }
+        .hint-icon {
+          font-size: 18px;
+        }
+        .llm-badge {
+          display: inline-block;
+          padding: 2px 8px;
+          font-size: 10px;
+          font-weight: 600;
+          color: white;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          border-radius: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .mapping-hint p {
+          margin: 0 0 8px;
+          color: var(--text-muted);
+        }
+        .mapping-hint p:last-child {
+          margin: 0;
+        }
+        .required-star {
+          color: #dc2626;
+          font-weight: bold;
+        }
+        .row-mapped {
+          background: #f0fdf4;
+        }
+        .auto-badge {
+          display: inline-block;
+          margin-left: 8px;
+          padding: 2px 6px;
+          font-size: 10px;
+          font-weight: 500;
+          color: #6366f1;
+          background: #eef2ff;
+          border-radius: 4px;
+          text-transform: uppercase;
+        }
+        .col-status {
+          width: 30px;
+          text-align: center;
+        }
+        .status-icon {
+          font-size: 14px;
+        }
+        .status-required {
+          color: #22c55e;
+          font-weight: bold;
+        }
+        .status-ok {
+          color: #6366f1;
+        }
+        .col-mapping select.is-mapped {
+          border-color: #22c55e;
+          background: #f0fdf4;
+        }
+        .mapping-summary {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-radius: 6px;
+          font-size: 13px;
+        }
+        .summary-left {
+          display: flex;
+          gap: 16px;
+        }
+        .summary-right {
+          display: flex;
+          gap: 16px;
+        }
+        .mapping-summary .valid {
+          color: #22c55e;
+          font-weight: 600;
+        }
+        .mapping-summary .invalid {
+          color: #dc2626;
+          font-weight: 600;
+        }
+        .auto-count {
+          color: #6366f1;
+        }
+        .mapped-count {
+          color: var(--text-muted);
+        }
+        .import-modal .modal-footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+          padding: 16px 24px;
+          border-top: 1px solid var(--border);
+        }
 
         /* Filters */
         .filters-row {
@@ -1288,6 +1830,23 @@ function Enterprises() {
         .results-count {
           font-size: 12px;
           color: var(--text-muted);
+        }
+
+        /* Bulk Toolbar */
+        .bulk-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 16px;
+          background: #eef2ff;
+          border: 1px solid #c7d2fe;
+          border-radius: 8px;
+          margin-bottom: 12px;
+        }
+        .bulk-count {
+          font-size: 13px;
+          font-weight: 600;
+          color: #4338ca;
         }
 
         /* Table */
@@ -1322,6 +1881,21 @@ function Enterprises() {
           width: 40px;
           text-align: center;
         }
+        .checkbox-th,
+        .checkbox-cell {
+          width: 40px;
+          text-align: center;
+        }
+        .checkbox-th input,
+        .checkbox-cell input {
+          width: 16px;
+          height: 16px;
+          cursor: pointer;
+          accent-color: var(--primary);
+        }
+        .selected-row {
+          background: #eef2ff !important;
+        }
         .btn-settings {
           background: none;
           border: none;
@@ -1339,6 +1913,27 @@ function Enterprises() {
         }
         .clickable-row:hover {
           background: #f8f9fa;
+        }
+        .actions-cell {
+          width: 40px;
+          text-align: center;
+        }
+        .btn-row-delete {
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 14px;
+          opacity: 0;
+          padding: 4px 6px;
+          border-radius: 4px;
+          transition: all 0.15s;
+        }
+        .clickable-row:hover .btn-row-delete {
+          opacity: 0.5;
+        }
+        .btn-row-delete:hover {
+          opacity: 1 !important;
+          background: #fee2e2;
         }
 
         /* Badges */

@@ -43,8 +43,9 @@ npm run dev
 
 # Ollama (LLM)
 ollama serve
-ollama pull qwen2.5:7b
-ollama pull nomic-embed-text
+ollama pull qwen2.5:7b      # Основная модель для чата
+ollama pull qwen2.5:3b      # Быстрая модель для импорта Excel
+ollama pull nomic-embed-text # Модель для эмбеддингов
 ```
 
 ### Доступ
@@ -131,10 +132,13 @@ NPF-project/
 - Ключевые вехи
 
 ### Enterprises (CRM)
-- CRUD предприятий
-- Категоризация и скоринг
-- Импорт из Excel/CSV
-- Фильтрация по статусу
+- CRUD предприятий с полями: ИНН, Холдинг, отрасль, численность и др.
+- Категоризация (A/B/V/G) и скоринг
+- **Интеллектуальный импорт Excel/CSV** с LLM-маппингом колонок (qwen2.5:3b)
+- Множественный выбор строк для групповых операций (удаление)
+- Настраиваемая таблица (drag-drop колонок, сортировка)
+- История контактов с клиентами
+- Фильтрация по категории, статусу, этапу продаж
 
 ### Roadmap
 - Задачи по кварталам
@@ -142,10 +146,11 @@ NPF-project/
 - Статусы и зависимости
 
 ### Documents (RAG)
-- Загрузка файлов (PDF, DOCX, XLSX, CSV, TXT)
-- Автоматическая индексация в ChromaDB
+- Загрузка файлов (PDF, DOCX, XLSX, CSV, TXT) до 30 МБ
+- Ручная векторизация документов (до 10 МБ)
+- Inline-редактирование названия и категории
 - OCR через Claude Vision
-- Векторный поиск
+- Векторный поиск в ChromaDB
 
 ### AI Chat
 - Multi-turn разговоры
@@ -159,7 +164,8 @@ NPF-project/
 
 | Модель | Таблица | Описание |
 |--------|---------|----------|
-| Enterprise | enterprises | Корпоративные клиенты |
+| Enterprise | enterprises | Корпоративные клиенты (ИНН, холдинг, контакты, история) |
+| Interaction | interactions | История контактов с клиентами |
 | RoadmapItem | roadmap_items | Задачи дорожной карты |
 | KPPContract | kpp_contracts | Договоры КПП |
 | Document | documents | Метаданные документов |
@@ -168,18 +174,24 @@ NPF-project/
 | LLMConfig | llm_configs | Конфигурация моделей |
 | Milestone | milestones | Ключевые вехи |
 | Risk | risks | Риски проекта |
+| TableConfig | table_configs | Настройки таблиц пользователя |
 
 ---
 
 ## API Endpoints
 
 ```
-/api/v1/enterprises/    # CRUD предприятий
+/api/v1/enterprises/              # CRUD предприятий
+/api/v1/enterprises/import/preview  # Предпросмотр импорта с LLM-маппингом
+/api/v1/enterprises/import        # Импорт с кастомным маппингом
+/api/v1/enterprises/{id}/interactions  # История контактов
+
 /api/v1/roadmap/        # CRUD дорожной карты
 /api/v1/documents/      # Управление документами
 /api/v1/rag/            # RAG запросы и чат
 /api/v1/conversations/  # История разговоров
 /api/v1/dashboard/      # Агрегированные данные
+/api/v1/table-config/   # Настройки таблиц
 
 /health                 # Health check
 /docs                   # Swagger UI
@@ -196,6 +208,31 @@ NPF-project/
 | `backend/app/services/document_service.py` | Индексация документов |
 | `frontend/src/pages/Dashboard.tsx` | Главный дашборд |
 | `frontend/src/services/api.ts` | HTTP клиент |
+| `frontend/src/pages/Enterprises.tsx` | CRM предприятий |
+| `frontend/src/types/models.ts` | Типы финансовых моделей |
+
+---
+
+## Enterprise Fields
+
+Поля карточки предприятия для импорта Excel:
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| name* | str | Наименование (обязательно) |
+| inn | str | ИНН (10-12 цифр) |
+| holding | str | Холдинг/группа компаний |
+| industry | str | Отрасль |
+| employee_count | int | Численность сотрудников |
+| bank_penetration | float | Проникновение ЗП (%) |
+| category | enum | Категория (A/B/V/G) |
+| score | int | Скоринг-балл |
+| locations | str | Площадки/филиалы |
+| contact_person | str | Контактное лицо |
+| contact_email | str | Email |
+| contact_phone | str | Телефон |
+| manager | str | Ответственный менеджер |
+| notes | str | Заметки |
 
 ---
 
@@ -238,6 +275,10 @@ BACKEND_PORT=8000
 - [x] CRUD для всех сущностей
 - [x] AI-чат с историей
 - [x] Docker конфигурация
+- [x] Интеллектуальный импорт Excel с LLM-маппингом
+- [x] Настраиваемые таблицы (drag-drop, сортировка)
+- [x] История контактов с клиентами
+- [x] Групповые операции (множественный выбор)
 
 ### В планах
 - [ ] Аутентификация (JWT + RBAC)
@@ -248,4 +289,4 @@ BACKEND_PORT=8000
 
 ---
 
-*Последнее обновление: февраль 2026*
+*Последнее обновление: 21 февраля 2026*

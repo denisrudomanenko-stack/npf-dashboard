@@ -35,6 +35,8 @@ class EnterpriseBase(BaseModel):
     category: Optional[EnterpriseCategory] = EnterpriseCategory.V
     score: Optional[int] = 0
     sales_status: Optional[SalesStatus] = SalesStatus.CONTACT
+    inn: Optional[str] = None
+    holding: Optional[str] = None
     locations: Optional[str] = None
     contact_person: Optional[str] = None
     contact_email: Optional[str] = None
@@ -56,6 +58,8 @@ class EnterpriseUpdate(BaseModel):
     category: Optional[EnterpriseCategory] = None
     score: Optional[int] = None
     sales_status: Optional[SalesStatus] = None
+    inn: Optional[str] = None
+    holding: Optional[str] = None
     locations: Optional[str] = None
     contact_person: Optional[str] = None
     contact_email: Optional[str] = None

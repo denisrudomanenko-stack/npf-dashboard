@@ -6,6 +6,7 @@ interface Document {
   filename: string
   original_filename: string
   file_type: string
+  file_size: number
   document_type: string
   title: string
   status: string
@@ -19,6 +20,11 @@ interface Stats {
   total_chunks: number
   indexed_documents: number
 }
+
+const MAX_FILE_SIZE_MB = 30
+const MAX_INDEX_SIZE_MB = 10
+const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024 // 30 MB
+const MAX_INDEX_SIZE = MAX_INDEX_SIZE_MB * 1024 * 1024 // 10 MB
 
 const DOC_TYPES = [
   { value: 'regulation', label: 'Регламент' },
@@ -40,15 +46,12 @@ function Documents() {
   const [selectedType, setSelectedType] = useState('other')
   const [processing, setProcessing] = useState<number | null>(null)
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
-  const [vectorizeDoc, setVectorizeDoc] = useState<Document | null>(null)
-  const [vectorizeType, setVectorizeType] = useState('')
   const [namingDoc, setNamingDoc] = useState<Document | null>(null)
   const [suggestedName, setSuggestedName] = useState('')
   const [customName, setCustomName] = useState('')
   const [namingLoading, setNamingLoading] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
-  const [categoryDoc, setCategoryDoc] = useState<Document | null>(null)
-  const [categoryType, setCategoryType] = useState('')
+  const [vectorizeDoc, setVectorizeDoc] = useState<Document | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -91,15 +94,22 @@ function Documents() {
     const file = e.target.files?.[0]
     if (!file) return
 
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      alert(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ).\nМаксимальный размер: ${MAX_FILE_SIZE_MB} МБ`)
+      e.target.value = ''
+      return
+    }
+
     setUploading(true)
     const formData = new FormData()
     formData.append('file', file)
     formData.append('document_type', selectedType)
-    formData.append('auto_index', 'false')
+    formData.append('auto_index', 'false') // Never auto-index
 
     try {
       const response = await api.post('/documents/upload', formData)
-      alert(`Файл загружен: ${response.data.filename}`)
+      alert(`Файл загружен: ${response.data.filename}\n\nДля добавления в поисковый индекс нажмите "Векторизировать"`)
       loadDocuments()
       loadStats()
     } catch (error: any) {
@@ -107,63 +117,6 @@ function Documents() {
     } finally {
       setUploading(false)
       e.target.value = ''
-    }
-  }
-
-  const openCategoryModal = (doc: Document) => {
-    setCategoryDoc(doc)
-    setCategoryType(doc.document_type || 'other')
-  }
-
-  const handleCategoryChange = async () => {
-    if (!categoryDoc) return
-
-    setProcessing(categoryDoc.id)
-    setCategoryDoc(null)
-    try {
-      const formData = new FormData()
-      formData.append('document_type', categoryType)
-      await api.patch(`/documents/${categoryDoc.id}/category`, formData)
-      loadDocuments()
-    } catch (error: any) {
-      alert(`Ошибка: ${error.response?.data?.detail || error.message}`)
-    } finally {
-      setProcessing(null)
-    }
-  }
-
-  const openVectorizeModal = (doc: Document) => {
-    setVectorizeDoc(doc)
-    setVectorizeType(doc.document_type || 'other')
-  }
-
-  const handleVectorize = async () => {
-    if (!vectorizeDoc) return
-
-    setProcessing(vectorizeDoc.id)
-    setVectorizeDoc(null)
-    try {
-      await api.post(`/documents/${vectorizeDoc.id}/reindex`, { document_type: vectorizeType })
-      alert(`Документ "${vectorizeDoc.title}" векторизирован`)
-      loadDocuments()
-      loadStats()
-    } catch (error: any) {
-      alert(`Ошибка векторизации: ${error.response?.data?.detail || error.message}`)
-    } finally {
-      setProcessing(null)
-    }
-  }
-
-  const handleOCR = async (doc: Document) => {
-    setProcessing(doc.id)
-    try {
-      const response = await api.post(`/documents/${doc.id}/ocr`)
-      alert(`OCR выполнен: ${response.data.message}`)
-      loadDocuments()
-    } catch (error: any) {
-      alert(`OCR недоступен: ${error.response?.data?.detail || 'Требуется настройка Anthropic API'}`)
-    } finally {
-      setProcessing(null)
     }
   }
 
@@ -184,6 +137,61 @@ function Documents() {
 
   const handleDownload = (doc: Document) => {
     window.open(`/api/v1/documents/${doc.id}/download`, '_blank')
+  }
+
+  const handleArchive = async (doc: Document) => {
+    if (!confirm(`Переместить документ "${doc.title || doc.original_filename}" в архив?`)) return
+
+    setProcessing(doc.id)
+    try {
+      await api.patch(`/documents/${doc.id}/archive`)
+      loadDocuments()
+      loadStats()
+    } catch (error: any) {
+      alert(`Ошибка архивации: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setProcessing(null)
+    }
+  }
+
+  const openVectorizeModal = (doc: Document) => {
+    // Check file size limit for indexing
+    if (doc.file_size && doc.file_size > MAX_INDEX_SIZE) {
+      alert(`Файл слишком большой для индексации (${(doc.file_size / 1024 / 1024).toFixed(1)} МБ).\nМаксимальный размер: ${MAX_INDEX_SIZE_MB} МБ`)
+      return
+    }
+    setVectorizeDoc(doc)
+  }
+
+  const handleVectorize = async () => {
+    if (!vectorizeDoc) return
+
+    setProcessing(vectorizeDoc.id)
+    setVectorizeDoc(null)
+    try {
+      await api.post(`/documents/${vectorizeDoc.id}/reindex`)
+      alert(`Документ "${vectorizeDoc.title || vectorizeDoc.original_filename}" добавлен в поисковый индекс`)
+      loadDocuments()
+      loadStats()
+    } catch (error: any) {
+      alert(`Ошибка индексации: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setProcessing(null)
+    }
+  }
+
+  const handleInlineCategoryChange = async (docId: number, newCategory: string) => {
+    setProcessing(docId)
+    try {
+      const formData = new FormData()
+      formData.append('document_type', newCategory)
+      await api.patch(`/documents/${docId}/category`, formData)
+      loadDocuments()
+    } catch (error: any) {
+      alert(`Ошибка: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setProcessing(null)
+    }
   }
 
   const openNamingModal = async (doc: Document) => {
@@ -285,20 +293,23 @@ function Documents() {
               <>📁 Загрузить документ</>
             )}
           </button>
-          <div className="upload-hint">PDF, DOCX, TXT, XLSX, CSV</div>
+          <div className="upload-hint">
+            PDF, DOCX, TXT, XLSX, CSV<br/>
+            Макс. размер: {MAX_FILE_SIZE_MB} МБ
+          </div>
         </div>
 
         {/* Info */}
         <div className="info-section">
-          <div className="panel-subtitle">Справка</div>
-          <div className="info-item" title="AI анализирует первые страницы и предлагает осмысленное название">
-            🧠 <strong>Обработать AI</strong> — автоназвание
+          <div className="panel-subtitle">Действия</div>
+          <div className="info-item" title="Добавить документ в поисковый индекс для семантического поиска (макс. 10 МБ)">
+            🔍 <strong>Векторизировать</strong> — индексация
           </div>
-          <div className="info-item" title="Разбивает документ на фрагменты и добавляет в векторный индекс">
-            🧠 <strong>Векторизировать</strong> — добавить в RAG
+          <div className="info-item" title="Нажмите на название документа для изменения">
+            ✏️ <strong>Название</strong> — кликните для редактирования
           </div>
-          <div className="info-item" title="Распознавание текста на сканированных PDF (требует Claude API)">
-            👁 <strong>OCR</strong> — распознать скан
+          <div className="info-item" title="Выберите категорию из выпадающего списка">
+            📂 <strong>Категория</strong> — выбор из списка
           </div>
         </div>
       </aside>
@@ -323,6 +334,7 @@ function Documents() {
               <p>Загрузите первый документ через панель слева</p>
             </div>
           ) : (
+            <div className="table-wrapper">
             <table className="docs-table">
               <thead>
                 <tr>
@@ -336,57 +348,58 @@ function Documents() {
                 {documents.map((doc) => (
                   <tr key={doc.id} className={processing === doc.id ? 'processing' : ''}>
                     <td className="doc-name-cell">
-                      <div className="doc-name">{doc.title || doc.original_filename}</div>
-                      <div className="doc-meta">{doc.file_type?.toUpperCase()} • {doc.original_filename}</div>
+                      <div
+                        className="doc-name editable"
+                        onClick={() => openNamingModal(doc)}
+                        title="Нажмите для изменения названия"
+                      >
+                        {doc.title || doc.original_filename}
+                        <span className="edit-icon">✏️</span>
+                      </div>
+                      <div className="doc-meta">{doc.file_type?.toUpperCase()}</div>
                     </td>
-                    <td><span className="category-chip">{getTypeLabel(doc.document_type)}</span></td>
+                    <td>
+                      <select
+                        className="category-select"
+                        value={doc.document_type || 'other'}
+                        onChange={(e) => handleInlineCategoryChange(doc.id, e.target.value)}
+                        disabled={processing === doc.id}
+                        title="Выберите категорию документа"
+                      >
+                        {DOC_TYPES.map(t => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td>{getStatusBadge(doc)}</td>
                     <td className="actions-cell">
                       <button
-                        className="action-btn-text btn-naming"
-                        onClick={() => openNamingModal(doc)}
-                        disabled={processing === doc.id}
-                        title="AI-анализ: извлечение первых страниц, определение темы, генерация названия"
-                      >
-                        🧠 Обработать AI
-                      </button>
-                      <button
                         className="action-btn-text btn-vectorize"
                         onClick={() => openVectorizeModal(doc)}
-                        disabled={processing === doc.id}
-                        title="Разбить на фрагменты и добавить в ChromaDB для семантического поиска"
+                        disabled={processing === doc.id || (doc.indexed_at !== null && doc.chunk_count > 0)}
+                        title={doc.indexed_at ? `Уже в индексе (${doc.chunk_count} фрагм.)` : `Добавить в поисковый индекс (макс. ${MAX_INDEX_SIZE_MB} МБ)`}
                       >
-                        🧠 Векторизировать
+                        🔍 Векторизировать
                       </button>
                       <button
                         className="action-btn-icon"
                         onClick={() => setPreviewDoc(doc)}
-                        title="Просмотр метаданных: название, категория, статус, даты"
+                        title="Открыть для просмотра"
                       >
-                        📋
+                        📖
                       </button>
-                      {doc.file_type === 'pdf' && (
-                        <button
-                          className="action-btn-icon"
-                          onClick={() => handleOCR(doc)}
-                          disabled={processing === doc.id}
-                          title="OCR через Claude Vision API для сканированных документов"
-                        >
-                          👁
-                        </button>
-                      )}
                       <button
                         className="action-btn-icon"
-                        onClick={() => openCategoryModal(doc)}
-                        disabled={processing === doc.id}
-                        title="Изменить категорию документа"
+                        onClick={() => handleArchive(doc)}
+                        disabled={processing === doc.id || doc.status === 'archived'}
+                        title="Переместить в архив"
                       >
-                        🏷️
+                        📦
                       </button>
                       <button
                         className="action-btn-icon"
                         onClick={() => handleDownload(doc)}
-                        title="Скачать оригинальный файл"
+                        title="Скачать файл"
                       >
                         ⬇️
                       </button>
@@ -394,7 +407,7 @@ function Documents() {
                         className="action-btn-icon btn-delete"
                         onClick={() => handleDelete(doc)}
                         disabled={processing === doc.id}
-                        title="Удалить документ и все его фрагменты из индекса"
+                        title="Удалить документ"
                       >
                         🗑️
                       </button>
@@ -403,6 +416,7 @@ function Documents() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </main>
@@ -425,38 +439,6 @@ function Documents() {
               {previewDoc.indexed_at && (
                 <div className="modal-row"><span>Индексирован:</span><strong>{new Date(previewDoc.indexed_at).toLocaleString('ru')}</strong></div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Vectorize Modal */}
-      {vectorizeDoc && (
-        <div className="modal-overlay" onClick={() => setVectorizeDoc(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Векторизация</h3>
-              <button className="close-btn" onClick={() => setVectorizeDoc(null)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <p className="modal-doc-name">{vectorizeDoc.title || vectorizeDoc.original_filename}</p>
-              <div className="form-field">
-                <label>Категория документа</label>
-                <select
-                  value={vectorizeType}
-                  onChange={(e) => setVectorizeType(e.target.value)}
-                  className="select-light"
-                >
-                  {DOC_TYPES.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-                <span className="field-hint">Влияет на размер фрагментов при разбиении</span>
-              </div>
-              <div className="modal-actions">
-                <button className="btn-cancel" onClick={() => setVectorizeDoc(null)}>Отмена</button>
-                <button className="btn-primary" onClick={handleVectorize}>Векторизировать</button>
-              </div>
             </div>
           </div>
         </div>
@@ -526,9 +508,15 @@ function Documents() {
               <button className="close-btn" onClick={() => setShowUploadModal(false)}>✕</button>
             </div>
             <div className="modal-body">
-              <p style={{ marginBottom: '16px', color: 'var(--text-muted)' }}>
-                Выберите категорию перед загрузкой файла
-              </p>
+              <div className="upload-limits-info">
+                <div className="limit-row">
+                  <span>Максимальный размер файла:</span>
+                  <strong>{MAX_FILE_SIZE_MB} МБ</strong>
+                </div>
+                <div className="limit-row hint">
+                  <span>Для индексации используйте кнопку "Векторизировать"</span>
+                </div>
+              </div>
               <div className="form-field">
                 <label>Категория документа</label>
                 <select
@@ -540,7 +528,7 @@ function Documents() {
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
-                <span className="field-hint">Влияет на размер фрагментов при векторизации</span>
+                <span className="field-hint">Влияет на размер фрагментов при индексации</span>
               </div>
               <div className="modal-actions">
                 <button className="btn-cancel" onClick={() => setShowUploadModal(false)}>Отмена</button>
@@ -551,31 +539,26 @@ function Documents() {
         </div>
       )}
 
-      {/* Category Change Modal */}
-      {categoryDoc && (
-        <div className="modal-overlay" onClick={() => setCategoryDoc(null)}>
+      {/* Vectorize Modal */}
+      {vectorizeDoc && (
+        <div className="modal-overlay" onClick={() => setVectorizeDoc(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Изменить категорию</h3>
-              <button className="close-btn" onClick={() => setCategoryDoc(null)}>✕</button>
+              <h3>Индексация документа</h3>
+              <button className="close-btn" onClick={() => setVectorizeDoc(null)}>✕</button>
             </div>
             <div className="modal-body">
-              <p className="modal-doc-name">{categoryDoc.title || categoryDoc.original_filename}</p>
-              <div className="form-field">
-                <label>Категория</label>
-                <select
-                  value={categoryType}
-                  onChange={(e) => setCategoryType(e.target.value)}
-                  className="select-light"
-                >
-                  {DOC_TYPES.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+              <p className="modal-doc-name">{vectorizeDoc.title || vectorizeDoc.original_filename}</p>
+              <div className="vectorize-info">
+                <p>Документ будет разбит на фрагменты и добавлен в поисковый индекс для семантического поиска.</p>
+                <div className="limit-row">
+                  <span>Макс. размер для индексации:</span>
+                  <strong>{MAX_INDEX_SIZE_MB} МБ</strong>
+                </div>
               </div>
               <div className="modal-actions">
-                <button className="btn-cancel" onClick={() => setCategoryDoc(null)}>Отмена</button>
-                <button className="btn-primary" onClick={handleCategoryChange}>Сохранить</button>
+                <button className="btn-cancel" onClick={() => setVectorizeDoc(null)}>Отмена</button>
+                <button className="btn-primary" onClick={handleVectorize}>Векторизировать</button>
               </div>
             </div>
           </div>
@@ -589,13 +572,13 @@ function Documents() {
           left: 0;
           right: 0;
           bottom: 0;
-          display: flex;
+          display: grid;
+          grid-template-columns: 240px 1fr;
           background: var(--background);
         }
 
         /* Left Panel */
         .docs-panel {
-          width: 240px;
           background: #1a1a2e;
           color: #fff;
           display: flex;
@@ -751,8 +734,14 @@ function Documents() {
 
         .docs-content {
           flex: 1;
-          overflow-y: auto;
+          overflow: auto;
           padding: 20px 24px;
+        }
+        .table-wrapper {
+          overflow-x: auto;
+          background: #fff;
+          border-radius: 8px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
 
         /* States */
@@ -792,11 +781,8 @@ function Documents() {
         /* Table */
         .docs-table {
           width: 100%;
+          min-width: 700px;
           border-collapse: collapse;
-          background: #fff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
         .docs-table th {
           text-align: left;
@@ -808,6 +794,7 @@ function Documents() {
           color: var(--text-muted);
           background: #f8f9fa;
           border-bottom: 1px solid var(--border);
+          white-space: nowrap;
         }
         .docs-table td {
           padding: 12px 16px;
@@ -821,6 +808,7 @@ function Documents() {
           opacity: 0.5;
         }
         .doc-name-cell {
+          min-width: 200px;
           max-width: 300px;
         }
         .doc-name {
@@ -831,9 +819,30 @@ function Documents() {
           overflow: hidden;
           text-overflow: ellipsis;
         }
+        .doc-name.editable {
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .doc-name.editable:hover {
+          color: var(--primary);
+        }
+        .edit-icon {
+          font-size: 10px;
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .doc-name.editable:hover .edit-icon,
+        .category-select-wrapper:hover .edit-icon {
+          opacity: 0.6;
+        }
         .doc-meta {
           font-size: 11px;
           color: var(--text-muted);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .category-chip {
           display: inline-block;
@@ -841,6 +850,7 @@ function Documents() {
           background: #f0f0f0;
           border-radius: 4px;
           font-size: 12px;
+          white-space: nowrap;
         }
 
         /* Status Badges */
@@ -866,43 +876,9 @@ function Documents() {
 
         /* Actions */
         .actions-cell {
-          white-space: nowrap;
           display: flex;
           align-items: center;
-          gap: 8px;
-        }
-        .action-btn-text {
-          padding: 6px 12px;
-          font-size: 12px;
-          font-weight: 500;
-          border: 1px solid transparent;
-          border-radius: 20px;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          white-space: nowrap;
-        }
-        .action-btn-text:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
-        }
-        .action-btn-text.btn-naming {
-          background: #f3e8ff;
-          color: #7c3aed;
-          border-color: #e9d5ff;
-        }
-        .action-btn-text.btn-naming:hover:not(:disabled) {
-          background: #ede9fe;
-        }
-        .action-btn-text.btn-vectorize {
-          background: #dcfce7;
-          color: #16a34a;
-          border-color: #bbf7d0;
-        }
-        .action-btn-text.btn-vectorize:hover:not(:disabled) {
-          background: #d1fae5;
+          gap: 6px;
         }
         .action-btn-icon {
           width: 32px;
@@ -928,6 +904,63 @@ function Documents() {
         }
         .action-btn-icon.btn-delete:hover:not(:disabled) {
           background: #fee2e2;
+        }
+        .action-btn-text {
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 500;
+          border: 1px solid transparent;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          white-space: nowrap;
+        }
+        .action-btn-text:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+        .action-btn-text.btn-vectorize {
+          background: #dbeafe;
+          color: #1d4ed8;
+          border-color: #bfdbfe;
+        }
+        .action-btn-text.btn-vectorize:hover:not(:disabled) {
+          background: #bfdbfe;
+        }
+
+        /* Category Select */
+        .category-select {
+          padding: 6px 10px;
+          font-size: 12px;
+          border: 1px solid #e5e7eb;
+          border-radius: 6px;
+          background: #fff;
+          cursor: pointer;
+          min-width: 120px;
+        }
+        .category-select:hover:not(:disabled) {
+          border-color: var(--primary);
+        }
+        .category-select:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Vectorize Info */
+        .vectorize-info {
+          background: #f0f9ff;
+          border: 1px solid #bae6fd;
+          border-radius: 8px;
+          padding: 12px;
+          margin-bottom: 16px;
+        }
+        .vectorize-info p {
+          margin: 0 0 8px;
+          font-size: 13px;
+          color: #0369a1;
         }
 
         /* Modal */
@@ -1022,6 +1055,37 @@ function Documents() {
           cursor: not-allowed;
         }
 
+        /* Upload Limits Info */
+        .upload-limits-info {
+          background: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 8px;
+          padding: 12px;
+          margin-bottom: 16px;
+        }
+        .limit-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: 13px;
+          padding: 4px 0;
+        }
+        .limit-row span {
+          color: var(--text-muted);
+        }
+        .limit-row strong {
+          color: var(--text);
+        }
+        .limit-row.hint {
+          justify-content: center;
+          padding-top: 8px;
+          border-top: 1px solid #e9ecef;
+          margin-top: 8px;
+        }
+        .limit-row.hint span {
+          font-size: 11px;
+          font-style: italic;
+        }
+
         /* Form Fields */
         .form-field {
           margin-bottom: 16px;
@@ -1089,6 +1153,65 @@ function Documents() {
         }
         .btn-use:hover {
           background: #6d28d9;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+          .docs-wrapper {
+            grid-template-columns: 220px 1fr;
+          }
+          .docs-panel {
+            padding: 12px;
+          }
+          .docs-content {
+            padding: 16px;
+          }
+        }
+        @media (max-width: 1000px) {
+          .docs-wrapper {
+            grid-template-columns: 200px 1fr;
+          }
+          .action-btn-icon {
+            width: 28px;
+            height: 28px;
+            font-size: 12px;
+          }
+        }
+        @media (max-width: 800px) {
+          .docs-wrapper {
+            grid-template-columns: 60px 1fr;
+          }
+          .docs-panel {
+            padding: 8px;
+            align-items: center;
+          }
+          .panel-title, .panel-subtitle,
+          .stat-label, .upload-hint,
+          .info-section {
+            display: none;
+          }
+          .stats-card {
+            padding: 8px;
+          }
+          .stat-row {
+            justify-content: center;
+          }
+          .stat-value {
+            display: none;
+          }
+          .upload-btn {
+            padding: 8px;
+            font-size: 16px;
+          }
+          .upload-btn span:not(.spinner-sm) {
+            display: none;
+          }
+          .docs-header {
+            padding: 12px 16px;
+          }
+          .docs-content {
+            padding: 12px;
+          }
         }
       `}</style>
     </div>

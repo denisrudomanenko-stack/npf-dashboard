@@ -1,7 +1,7 @@
 import { Outlet, NavLink } from 'react-router-dom'
 
 const navItems = [
-  { path: '/', label: 'Dashboard', tooltip: 'Дорожная карта развития корпоративного блока НПФ: KPI, timeline, pipeline предприятий, воронка продаж, матрица рисков и ключевые вехи.' },
+  { path: '/', label: 'Дашборд', tooltip: 'Дорожная карта развития корпоративного блока НПФ: KPI, timeline, pipeline предприятий, воронка продаж, матрица рисков и ключевые вехи.' },
   { path: '/enterprises', label: 'Предприятия', tooltip: 'Реестр корпоративных клиентов НПФ: управление списком предприятий, отслеживание статусов (потенциал, переговоры, пилот, активный), импорт данных из Excel/CSV.' },
   { path: '/documents', label: 'Документы', tooltip: 'База знаний для AI-ассистента (RAG): загрузка регламентов, презентаций, FAQ и других документов. Векторизация для семантического поиска, OCR для сканированных PDF.' },
   { path: '/models', label: 'Модели', tooltip: 'Финансовые модели и калькуляторы: МГД (минимальная гарантированная доходность), стресс-тесты портфеля, юнит-экономика КПП, оценка инфраструктуры.' },
@@ -13,7 +13,7 @@ function Layout() {
     <div className="layout">
       <header className="header">
         <div className="container header-content">
-          <h1 className="logo">NPF Development</h1>
+          <h1 className="logo">Управление НПФ</h1>
           <nav className="nav">
             {navItems.map((item) => (
               <NavLink

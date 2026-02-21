@@ -43,6 +43,8 @@ class Enterprise(Base):
     score = Column(Integer, default=0)  # Скоринг-балл
     sales_status = Column(SQLEnum(SalesStatus), default=SalesStatus.CONTACT)
 
+    inn = Column(String(12))  # ИНН предприятия (10 или 12 цифр)
+    holding = Column(String(255))  # Холдинг/группа компаний
     locations = Column(String(1000))  # JSON string of locations
     contact_person = Column(String(255))
     contact_email = Column(String(255))

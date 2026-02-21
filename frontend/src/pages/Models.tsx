@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
+import { AVAILABLE_MODELS, ModelDefinition } from '../types/models'
 
 // ==================== TYPES ====================
 interface Tranche {
@@ -402,7 +403,20 @@ function parseInputNumber(value: string): number {
   return isNaN(num) ? 0 : num
 }
 
+// Placeholder component for future models
+function PlaceholderModel({ model }: { model: ModelDefinition }) {
+  return (
+    <div className="placeholder-model">
+      <div className="placeholder-icon">{model.icon}</div>
+      <h2>{model.name}</h2>
+      <p>{model.description}</p>
+      <div className="placeholder-badge">В разработке</div>
+    </div>
+  )
+}
+
 function Models() {
+  const [activeModel, setActiveModel] = useState('mgd')
   const [inputs, setInputs] = useState<MGDInputs>(defaultInputs)
   const [activeTab, setActiveTab] = useState<'calculator' | 'sensitivity' | 'montecarlo' | 'recommendations'>('calculator')
   const [showFormulas, setShowFormulas] = useState(false)
@@ -494,9 +508,29 @@ function Models() {
   }
 
   return (
-    <div className="models-wrapper">
-      {/* Left Sidebar - Inputs */}
-      <aside className="inputs-panel">
+    <div className="models-page">
+      {/* Sidebar - Model List */}
+      <aside className="models-sidebar">
+        <div className="sidebar-header">Финансовые модели</div>
+        <nav className="models-list">
+          {AVAILABLE_MODELS.map(model => (
+            <button
+              key={model.id}
+              className={`model-item ${activeModel === model.id ? 'active' : ''}`}
+              onClick={() => setActiveModel(model.id)}
+              title={model.description}
+            >
+              <span className="model-icon">{model.icon}</span>
+              <span className="model-name">{model.name}</span>
+              {model.id !== 'mgd' && <span className="model-badge">Soon</span>}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      {/* Settings Panel - Inputs (only for MGD) */}
+      {activeModel === 'mgd' && (
+      <aside className="settings-panel">
         <div className="panel-header">
           <span className="panel-title" title="Минимальная гарантированная доходность (МГД) — финансовый инструмент для пенсионных продуктов с защитой капитала">📊 Калькулятор МГД</span>
           <button className="btn-reset" onClick={resetToDefaults} title="Сбросить все параметры к значениям по умолчанию: ставка гарантии 10%, доходность 8%, комиссия 1.5%, два тестовых транша">
@@ -689,9 +723,12 @@ function Models() {
           </section>
         </div>
       </aside>
+      )}
 
-      {/* Main Content */}
-      <main className="results-main">
+      {/* Results Panel */}
+      <main className="results-panel">
+        {activeModel === 'mgd' ? (
+          <>
         {/* Tabs */}
         <div className="results-tabs">
           <button
@@ -753,38 +790,40 @@ function Models() {
               {/* Detailed Results */}
               <div className="results-table">
                 <h3 title="Пошаговый расчёт от депозитов до итогового дефицита/профицита">Детализация расчёта</h3>
-                <table>
-                  <tbody>
-                    <tr title="Сумма всех траншей без учёта времени участия в периоде">
-                      <td>Общий депозит</td>
-                      <td className="value">{formatCurrency(results.totalDeposit)}</td>
-                    </tr>
-                    <tr title="Сумма (транш × timeFraction). Учитывает, что поздние транши участвуют в периоде меньше времени">
-                      <td>Взвешенный NAV (средний капитал)</td>
-                      <td className="value">{formatCurrency(results.weightedNAV)}</td>
-                    </tr>
-                    <tr title="Минимальный доход, который фонд гарантирует клиентам = Σ(транш × g × timeFraction × yearFrac)">
-                      <td>Гарантированное начисление</td>
-                      <td className="value">{formatCurrency(results.guaranteedAccrual)}</td>
-                    </tr>
-                    <tr title="Инвестиционный доход портфеля до вычета комиссий = WeightedNAV × r × yearFrac">
-                      <td>Валовой инвестиционный доход</td>
-                      <td className="value">{formatCurrency(results.grossIncome)}</td>
-                    </tr>
-                    <tr title="Вознаграждение управляющей компании = WeightedNAV × mf × yearFrac">
-                      <td>Комиссии</td>
-                      <td className="value negative">-{formatCurrency(results.totalFees)}</td>
-                    </tr>
-                    <tr className="total-row" title="Доход, который получат клиенты = Валовой доход − Комиссии">
-                      <td>Чистый доход клиентам</td>
-                      <td className="value">{formatCurrency(results.netIncome)}</td>
-                    </tr>
-                    <tr className={results.deficit > 0 ? 'deficit-row' : 'surplus-row'} title={results.deficit > 0 ? 'Сумма, которую фонд должен доплатить из собственных средств для выполнения гарантии' : 'Превышение чистого дохода над гарантией. Может быть направлено в резерв'}>
-                      <td>{results.deficit > 0 ? 'Дефицит (докапитализация)' : 'Профицит'}</td>
-                      <td className="value">{formatCurrency(results.deficit > 0 ? results.deficit : results.surplus)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div className="table-wrapper">
+                  <table>
+                    <tbody>
+                      <tr title="Сумма всех траншей без учёта времени участия в периоде">
+                        <td>Общий депозит</td>
+                        <td className="value">{formatCurrency(results.totalDeposit)}</td>
+                      </tr>
+                      <tr title="Сумма (транш × timeFraction). Учитывает, что поздние транши участвуют в периоде меньше времени">
+                        <td>Взвешенный NAV</td>
+                        <td className="value">{formatCurrency(results.weightedNAV)}</td>
+                      </tr>
+                      <tr title="Минимальный доход, который фонд гарантирует клиентам = Σ(транш × g × timeFraction × yearFrac)">
+                        <td>Гарантированное начисление</td>
+                        <td className="value">{formatCurrency(results.guaranteedAccrual)}</td>
+                      </tr>
+                      <tr title="Инвестиционный доход портфеля до вычета комиссий = WeightedNAV × r × yearFrac">
+                        <td>Валовой доход</td>
+                        <td className="value">{formatCurrency(results.grossIncome)}</td>
+                      </tr>
+                      <tr title="Вознаграждение управляющей компании = WeightedNAV × mf × yearFrac">
+                        <td>Комиссии</td>
+                        <td className="value negative">-{formatCurrency(results.totalFees)}</td>
+                      </tr>
+                      <tr className="total-row" title="Доход, который получат клиенты = Валовой доход − Комиссии">
+                        <td>Чистый доход</td>
+                        <td className="value">{formatCurrency(results.netIncome)}</td>
+                      </tr>
+                      <tr className={results.deficit > 0 ? 'deficit-row' : 'surplus-row'} title={results.deficit > 0 ? 'Сумма, которую фонд должен доплатить из собственных средств для выполнения гарантии' : 'Превышение чистого дохода над гарантией. Может быть направлено в резерв'}>
+                        <td>{results.deficit > 0 ? 'Дефицит' : 'Профицит'}</td>
+                        <td className="value">{formatCurrency(results.deficit > 0 ? results.deficit : results.surplus)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Tranche Details */}
@@ -796,32 +835,34 @@ function Models() {
                     onClick={() => setShowFormulas(!showFormulas)}
                     title={showFormulas ? 'Скрыть математические формулы расчёта' : 'Показать математические формулы: time fraction, weighted NAV, гарантированное начисление, breakeven return'}
                   >
-                    {showFormulas ? 'Скрыть формулы' : 'Показать формулы'}
+                    {showFormulas ? 'Скрыть формулы' : 'Формулы'}
                   </button>
                 </div>
 
-                <table>
-                  <thead>
-                    <tr>
-                      <th title="Порядковый номер транша">#</th>
-                      <th title="Дата поступления транша">Дата</th>
-                      <th title="Общая сумма транша в рублях">Сумма</th>
-                      <th title="Доля времени участия в периоде: (дней от транша до конца) / (всего дней в периоде). 100% = транш с начала периода">Time Fraction</th>
-                      <th title="Гарантированное начисление для этого транша = сумма × ставка × timeFraction × yearFrac. Если 'МГД только на первый взнос' — только первый транш">Гарантия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {results.trancheDetails.map((t, idx) => (
-                      <tr key={t.id}>
-                        <td>{idx + 1}</td>
-                        <td>{t.date}</td>
-                        <td>{formatCurrency(t.amount)}</td>
-                        <td>{(t.timeFraction * 100).toFixed(1)}%</td>
-                        <td>{formatCurrency(t.guaranteedAccrual)}</td>
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th title="Порядковый номер транша">#</th>
+                        <th title="Дата поступления транша">Дата</th>
+                        <th title="Общая сумма транша в рублях">Сумма</th>
+                        <th title="Доля времени участия в периоде">TF</th>
+                        <th title="Гарантированное начисление для этого транша">Гарантия</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {results.trancheDetails.map((t, idx) => (
+                        <tr key={t.id}>
+                          <td>{idx + 1}</td>
+                          <td>{t.date}</td>
+                          <td>{formatCurrency(t.amount)}</td>
+                          <td>{(t.timeFraction * 100).toFixed(1)}%</td>
+                          <td>{formatCurrency(t.guaranteedAccrual)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Formulas */}
@@ -865,75 +906,81 @@ function Models() {
 
               <div className="sensitivity-grid">
                 <div className="sensitivity-block">
-                  <h4>Доходность портфеля (r = {inputs.grossReturn}%)</h4>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Изменение</th>
-                        <th>Значение r</th>
-                        <th>Дефицит</th>
-                        <th>Профицит</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sensitivityReturn.map((p, i) => (
-                        <tr key={i} className={p.delta === 0 ? 'baseline' : ''}>
-                          <td>{p.delta >= 0 ? '+' : ''}{(p.delta * 100).toFixed(1)}%</td>
-                          <td>{formatPercent(calcInputs.grossReturn + p.delta)}</td>
-                          <td className={p.deficit > 0 ? 'negative' : ''}>{formatCurrency(p.deficit)}</td>
-                          <td className={p.surplus > 0 ? 'positive' : ''}>{formatCurrency(p.surplus)}</td>
+                  <h4>Доходность (r = {inputs.grossReturn}%)</h4>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Δ</th>
+                          <th>r</th>
+                          <th>Дефицит</th>
+                          <th>Профицит</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {sensitivityReturn.map((p, i) => (
+                          <tr key={i} className={p.delta === 0 ? 'baseline' : ''}>
+                            <td>{p.delta >= 0 ? '+' : ''}{(p.delta * 100).toFixed(1)}%</td>
+                            <td>{formatPercent(calcInputs.grossReturn + p.delta)}</td>
+                            <td className={p.deficit > 0 ? 'negative' : ''}>{formatCurrency(p.deficit)}</td>
+                            <td className={p.surplus > 0 ? 'positive' : ''}>{formatCurrency(p.surplus)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 <div className="sensitivity-block">
-                  <h4>Ставка гарантии (g = {inputs.guaranteeRate}%)</h4>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Изменение</th>
-                        <th>Значение g</th>
-                        <th>Дефицит</th>
-                        <th>Профицит</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sensitivityGuarantee.map((p, i) => (
-                        <tr key={i} className={p.delta === 0 ? 'baseline' : ''}>
-                          <td>{p.delta >= 0 ? '+' : ''}{(p.delta * 100).toFixed(1)}%</td>
-                          <td>{formatPercent(calcInputs.guaranteeRate + p.delta)}</td>
-                          <td className={p.deficit > 0 ? 'negative' : ''}>{formatCurrency(p.deficit)}</td>
-                          <td className={p.surplus > 0 ? 'positive' : ''}>{formatCurrency(p.surplus)}</td>
+                  <h4>Гарантия (g = {inputs.guaranteeRate}%)</h4>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Δ</th>
+                          <th>g</th>
+                          <th>Дефицит</th>
+                          <th>Профицит</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {sensitivityGuarantee.map((p, i) => (
+                          <tr key={i} className={p.delta === 0 ? 'baseline' : ''}>
+                            <td>{p.delta >= 0 ? '+' : ''}{(p.delta * 100).toFixed(1)}%</td>
+                            <td>{formatPercent(calcInputs.guaranteeRate + p.delta)}</td>
+                            <td className={p.deficit > 0 ? 'negative' : ''}>{formatCurrency(p.deficit)}</td>
+                            <td className={p.surplus > 0 ? 'positive' : ''}>{formatCurrency(p.surplus)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 <div className="sensitivity-block">
-                  <h4>Комиссия за управление (mf = {inputs.managementFee}%)</h4>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Изменение</th>
-                        <th>Значение mf</th>
-                        <th>Дефицит</th>
-                        <th>Профицит</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sensitivityFee.map((p, i) => (
-                        <tr key={i} className={p.delta === 0 ? 'baseline' : ''}>
-                          <td>{p.delta >= 0 ? '+' : ''}{(p.delta * 100).toFixed(2)}%</td>
-                          <td>{formatPercent(calcInputs.managementFee + p.delta)}</td>
-                          <td className={p.deficit > 0 ? 'negative' : ''}>{formatCurrency(p.deficit)}</td>
-                          <td className={p.surplus > 0 ? 'positive' : ''}>{formatCurrency(p.surplus)}</td>
+                  <h4>Комиссия (mf = {inputs.managementFee}%)</h4>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Δ</th>
+                          <th>mf</th>
+                          <th>Дефицит</th>
+                          <th>Профицит</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {sensitivityFee.map((p, i) => (
+                          <tr key={i} className={p.delta === 0 ? 'baseline' : ''}>
+                            <td>{p.delta >= 0 ? '+' : ''}{(p.delta * 100).toFixed(2)}%</td>
+                            <td>{formatPercent(calcInputs.managementFee + p.delta)}</td>
+                            <td className={p.deficit > 0 ? 'negative' : ''}>{formatCurrency(p.deficit)}</td>
+                            <td className={p.surplus > 0 ? 'positive' : ''}>{formatCurrency(p.surplus)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1033,27 +1080,97 @@ function Models() {
             </div>
           )}
         </div>
+          </>
+        ) : (
+          <PlaceholderModel model={AVAILABLE_MODELS.find(m => m.id === activeModel) || AVAILABLE_MODELS[0]} />
+        )}
       </main>
 
       <style>{`
-        .models-wrapper {
+        .models-page {
           position: fixed;
           top: 73px;
           left: 0;
           right: 0;
           bottom: 0;
-          display: flex;
+          display: grid;
+          grid-template-columns: 220px 350px 1fr;
           background: #f5f5f7;
         }
 
-        /* Left Panel - Inputs (Compact) */
-        .inputs-panel {
-          width: 300px;
+        /* Sidebar - Model List */
+        .models-sidebar {
+          background: #1a1a2e;
+          color: #fff;
+          display: flex;
+          flex-direction: column;
+          border-right: 1px solid rgba(255,255,255,0.1);
+        }
+        .sidebar-header {
+          padding: 16px;
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          color: #888;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .models-list {
+          flex: 1;
+          overflow-y: auto;
+          padding: 8px;
+        }
+        .model-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 12px;
+          background: transparent;
+          border: none;
+          border-radius: 8px;
+          color: #ccc;
+          font-size: 13px;
+          cursor: pointer;
+          text-align: left;
+          transition: all 0.15s ease;
+        }
+        .model-item:hover {
+          background: rgba(255,255,255,0.08);
+        }
+        .model-item.active {
+          background: #6366f1;
+          color: white;
+        }
+        .model-item.active .model-badge {
+          background: rgba(255,255,255,0.2);
+          color: white;
+        }
+        .model-icon {
+          font-size: 16px;
+        }
+        .model-name {
+          flex: 1;
+        }
+        .model-badge {
+          font-size: 9px;
+          padding: 2px 6px;
+          background: rgba(255,255,255,0.1);
+          border-radius: 4px;
+          color: #888;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        /* Settings Panel - Inputs (previously inputs-panel) */
+        .settings-panel {
+          width: 350px;
           background: #1a1a2e;
           color: #fff;
           display: flex;
           flex-direction: column;
           overflow: hidden;
+          border-right: 1px solid rgba(255,255,255,0.1);
         }
         .panel-header {
           display: flex;
@@ -1221,13 +1338,49 @@ function Models() {
           padding: 3px 5px;
         }
 
-        /* Main Area */
-        .results-main {
+        /* Results Panel (Main Area) */
+        .results-panel {
           flex: 1;
           display: flex;
           flex-direction: column;
           min-width: 0;
           overflow: hidden;
+        }
+
+        /* Placeholder for future models */
+        .placeholder-model {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 40px;
+          color: var(--text-muted);
+        }
+        .placeholder-icon {
+          font-size: 64px;
+          margin-bottom: 16px;
+          opacity: 0.5;
+        }
+        .placeholder-model h2 {
+          font-size: 24px;
+          font-weight: 600;
+          color: var(--text);
+          margin: 0 0 8px;
+        }
+        .placeholder-model p {
+          font-size: 14px;
+          margin: 0 0 24px;
+        }
+        .placeholder-badge {
+          display: inline-block;
+          padding: 6px 16px;
+          background: rgba(99, 102, 241, 0.1);
+          color: #6366f1;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 500;
         }
 
         .results-tabs {
@@ -1274,7 +1427,7 @@ function Models() {
 
         .summary-cards {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
           gap: 16px;
           margin-bottom: 24px;
         }
@@ -1299,6 +1452,7 @@ function Models() {
         .card-value {
           font-size: 18px;
           font-weight: 700;
+          word-break: break-word;
         }
 
         .results-table, .tranche-details {
@@ -1307,15 +1461,24 @@ function Models() {
           padding: 16px;
           margin-bottom: 16px;
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          overflow: hidden;
+        }
+        .results-table .table-wrapper,
+        .tranche-details .table-wrapper {
+          overflow-x: auto;
+          margin: 0 -16px;
+          padding: 0 16px;
         }
         .results-table table, .tranche-details table {
           width: 100%;
+          min-width: 300px;
           border-collapse: collapse;
         }
         .results-table td, .tranche-details td, .tranche-details th {
           padding: 10px 8px;
           border-bottom: 1px solid #f0f0f0;
           font-size: 13px;
+          white-space: nowrap;
         }
         .results-table .value, .tranche-details td {
           text-align: right;
@@ -1394,7 +1557,7 @@ function Models() {
 
         .sensitivity-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
           gap: 16px;
         }
         .sensitivity-block {
@@ -1402,20 +1565,36 @@ function Models() {
           border-radius: 10px;
           padding: 16px;
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          overflow: hidden;
         }
         .sensitivity-block h4 {
           font-size: 13px;
+          font-weight: 600;
           margin: 0 0 12px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .sensitivity-block .table-wrapper {
+          overflow-x: auto;
+          margin: 0 -16px;
+          padding: 0 16px;
         }
         .sensitivity-block table {
           width: 100%;
+          min-width: 260px;
           border-collapse: collapse;
           font-size: 12px;
         }
         .sensitivity-block th, .sensitivity-block td {
-          padding: 8px;
+          padding: 8px 6px;
           text-align: right;
           border-bottom: 1px solid #f0f0f0;
+          white-space: nowrap;
+        }
+        .sensitivity-block th:first-child,
+        .sensitivity-block td:first-child {
+          text-align: left;
         }
         .sensitivity-block th {
           font-weight: 600;
@@ -1433,7 +1612,7 @@ function Models() {
         /* Monte Carlo Tab */
         .mc-summary {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
           gap: 16px;
           margin-bottom: 24px;
         }
@@ -1546,14 +1725,60 @@ function Models() {
         }
 
         /* Responsive */
-        @media (max-width: 1100px) {
-          .summary-cards, .mc-summary {
+        @media (max-width: 1400px) {
+          .models-page {
+            grid-template-columns: 200px 320px 1fr;
+          }
+        }
+        @media (max-width: 1200px) {
+          .models-page {
+            grid-template-columns: 180px 300px 1fr;
+          }
+          .results-content {
+            padding: 16px;
+          }
+        }
+        @media (max-width: 1000px) {
+          .models-page {
+            grid-template-columns: 60px 280px 1fr;
+          }
+          .sidebar-header {
+            display: none;
+          }
+          .model-item {
+            justify-content: center;
+            padding: 12px 8px;
+          }
+          .model-name, .model-badge {
+            display: none;
+          }
+          .model-icon {
+            font-size: 20px;
+          }
+          .results-content {
+            padding: 12px;
+          }
+          .sensitivity-grid {
             grid-template-columns: 1fr;
+          }
+          .card-value {
+            font-size: 16px;
+          }
+          .mc-value {
+            font-size: 20px;
           }
         }
         @media (max-width: 800px) {
-          .inputs-panel {
-            width: 280px;
+          .models-page {
+            grid-template-columns: 50px 250px 1fr;
+          }
+          .results-tabs {
+            padding: 8px 12px;
+            flex-wrap: wrap;
+          }
+          .tab {
+            padding: 6px 10px;
+            font-size: 12px;
           }
         }
       `}</style>

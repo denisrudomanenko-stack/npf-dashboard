@@ -19,6 +19,12 @@ from app.config import settings
 
 router = APIRouter()
 
+# File size limits
+MAX_FILE_SIZE_MB = 30
+MAX_INDEX_SIZE_MB = 10
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024  # 30 MB
+MAX_INDEX_SIZE = MAX_INDEX_SIZE_MB * 1024 * 1024  # 10 MB
+
 
 def get_file_hash(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
@@ -91,6 +97,19 @@ async def upload_document(
         raise HTTPException(status_code=400, detail=f"File type {file_ext} not allowed. Allowed: {allowed_extensions}")
 
     contents = await file.read()
+
+    # Check file size
+    file_size = len(contents)
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({file_size / 1024 / 1024:.1f} MB). Maximum size: {MAX_FILE_SIZE_MB} MB"
+        )
+
+    # Disable auto-index for large files
+    if file_size > MAX_INDEX_SIZE and auto_index:
+        auto_index = False
+
     content_hash = get_file_hash(contents)
 
     # Check for duplicates by hash
@@ -221,6 +240,14 @@ async def reindex_document(
 
     if not doc.file_path or not os.path.exists(doc.file_path):
         raise HTTPException(status_code=400, detail="Document file not found")
+
+    # Check file size for indexing
+    file_size = os.path.getsize(doc.file_path)
+    if file_size > MAX_INDEX_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large for indexing ({file_size / 1024 / 1024:.1f} MB). Maximum: {MAX_INDEX_SIZE_MB} MB"
+        )
 
     # Update document type if provided
     new_doc_type = None
