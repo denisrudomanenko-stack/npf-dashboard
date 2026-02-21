@@ -368,7 +368,7 @@ function Dashboard() {
             <div className="kpi-content">
               <div className="kpi-label-row">
                 <div className="kpi-label">Взносы</div>
-                <div className="kpi-weight">40%</div>
+                <div className="kpi-weight">Вес 40%</div>
               </div>
               <div className="kpi-value">
                 <span className="current">{kpiData.external.collections.current}</span>
@@ -469,7 +469,7 @@ function Dashboard() {
             <div className="kpi-content">
               <div className="kpi-label-row">
                 <div className="kpi-label">Участники</div>
-                <div className="kpi-weight">30%</div>
+                <div className="kpi-weight">Вес 30%</div>
               </div>
               <div className="kpi-value">
                 <span className="current">{kpiData.bank.participants.current.toLocaleString()}</span>
@@ -570,7 +570,7 @@ function Dashboard() {
             <div className="kpi-content">
               <div className="kpi-label-row">
                 <div className="kpi-label">Количество ДДС</div>
-                <div className="kpi-weight">30%</div>
+                <div className="kpi-weight">Вес 30%</div>
               </div>
               <div className="kpi-value">
                 <span className="current">{kpiData.zk.ddsCount.current.toLocaleString()}</span>
