@@ -30,9 +30,9 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./data:/app/data
+      - ./db:/app/db
       - npf_uploads_dev:/app/uploads
       - npf_chroma_dev:/app/chroma_db
-      - npf_db_dev:/app/db
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///./db/npf.db
       - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
@@ -51,4 +51,3 @@ networks:
 volumes:
   npf_uploads_dev:
   npf_chroma_dev:
-  npf_db_dev:
