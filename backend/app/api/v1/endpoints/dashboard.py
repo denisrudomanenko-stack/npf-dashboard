@@ -130,6 +130,9 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
     bank_participants_target = int(targets.get("bank_participants_target", 0))
     bank_penetration_target = (bank_participants_target / bank_headcount * 100) if bank_headcount > 0 else 0
 
+    # Calculate target employee contributions: 72000 руб × participants / 1_000_000 (в млн руб)
+    bank_employee_contributions_target = 72000 * bank_participants_target / 1_000_000
+
     # ZK track data from sales_data
     zk_dds_count = zk_data.dds_count if zk_data else 0
     zk_dds_collections = zk_data.dds_collections if zk_data else 0
@@ -176,7 +179,7 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
             },
             "employeeContributions": {
                 "current": round(bank_employee_contributions, 2),
-                "target": targets.get("bank_employee_contributions_target", 50.0)
+                "target": round(bank_employee_contributions_target, 1)
             },
             "bankContributions": {
                 "current": round(bank_bank_contributions, 2),
