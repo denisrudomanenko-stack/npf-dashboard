@@ -1,0 +1,65 @@
+# Simple server configuration (without AI/LLM)
+# Only: PostgreSQL + Backend + Frontend
+#
+# Usage: docker compose -f docker-compose.simple.yml --env-file .env.server up -d
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    networks:
+      - npf-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - npf_uploads:/app/uploads
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-npf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-npf_db}
+      - SECRET_KEY=${SECRET_KEY}
+      - APP_ENV=production
+      - DEBUG=false
+      # AI disabled
+      - OLLAMA_BASE_URL=
+      - ANTHROPIC_API_KEY=
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - npf-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-npf}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-npf_db}
+    volumes:
+      - npf_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-npf} -d ${POSTGRES_DB:-npf_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - npf-network
+    restart: unless-stopped
+
+networks:
+  npf-network:
+    driver: bridge
+
+volumes:
+  npf_postgres_data:
+  npf_uploads:

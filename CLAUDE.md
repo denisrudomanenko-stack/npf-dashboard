@@ -128,8 +128,9 @@ NPF-project/
 │
 ├── docker-compose.yml      # Production (legacy)
 ├── docker-compose.dev.yml  # Development (SQLite)
-├── docker-compose.prod.yml # Production локально (PostgreSQL)
-├── docker-compose.server.yml # Server (PostgreSQL + Claude API)
+├── docker-compose.prod.yml # Production локально (PostgreSQL + Ollama)
+├── docker-compose.server.yml # Server full (PostgreSQL + Ollama + Claude API)
+├── docker-compose.simple.yml # Server simple (PostgreSQL only, без AI)
 ├── .env.example            # Environment template
 ├── .env.server.example     # Server environment template
 └── CLAUDE.md               # This file
@@ -332,10 +333,24 @@ BACKEND_PORT=8000
 - [x] Даты актуальности данных на KPI карточках
 - [x] Веса KPI (40%-30%-30%)
 - [x] Этап "Переговоры" в воронке продаж
+- [x] **Деплой на VPS Timeweb** (217.198.9.249) — остановлен до интеграции авторизации
+- [x] **Упрощённая конфигурация** (docker-compose.simple.yml) — без AI/LLM
 
 ### В планах
-- [ ] **Деплой на VPS-сервер** (ожидает аренды сервера)
-- [ ] Аутентификация (JWT + RBAC)
+
+#### Приоритет 1: Безопасность
+- [ ] **Аутентификация (JWT + RBAC)** — требуется для запуска сервера
+- [ ] Роли пользователей (admin, manager, viewer)
+- [ ] Защита API-эндпоинтов
+
+#### Приоритет 2: AI-функции (после авторизации)
+- [ ] Интеграция AI-ассистента на сервере
+- [ ] ChromaDB для RAG (векторный поиск)
+- [ ] Ollama для эмбеддингов (nomic-embed-text)
+- [ ] Claude API для генерации ответов
+- [ ] Интеллектуальный импорт Excel с LLM
+
+#### Приоритет 3: Дополнительные функции
 - [ ] Email уведомления
 - [ ] Экспорт отчётов (PDF, Excel)
 - [ ] Интеграции (1C, CRM)
@@ -354,30 +369,59 @@ BACKEND_PORT=8000
 
 ---
 
+## Сервер (Production)
+
+| Параметр | Значение |
+|----------|----------|
+| **Провайдер** | Timeweb Cloud |
+| **IP-адрес** | 217.198.9.249 |
+| **SSH** | `ssh -i ~/.ssh/npf_server root@217.198.9.249` |
+| **Статус** | ⏸️ Остановлен (ожидает авторизации) |
+
+### Запуск сервера
+```bash
+ssh -i ~/.ssh/npf_server root@217.198.9.249
+cd /opt/npf-project
+docker compose -f docker-compose.simple.yml --env-file .env.server up -d
+```
+
+### Остановка сервера
+```bash
+ssh -i ~/.ssh/npf_server root@217.198.9.249
+cd /opt/npf-project
+docker compose -f docker-compose.simple.yml down
+```
+
+---
+
 ## Последняя сессия (21 февраля 2026)
 
 ### Выполнено
 1. Добавлены даты актуальности данных на KPI карточки
 2. Добавлены веса KPI (40%-30%-30%) на ключевые карточки
 3. Добавлен этап "Переговоры" в воронку продаж
-4. Настроен PostgreSQL для production (docker-compose.prod.yml)
-5. Выполнена миграция 35 предприятий из SQLite в PostgreSQL
-6. Перенесены документы RAG в Docker volume
-7. Создана server-конфигурация (docker-compose.server.yml):
-   - Ollama только для эмбеддингов (nomic-embed-text)
-   - Claude API для генерации ответов
-8. Созданы скрипты деплоя: deploy.sh, backup-server.sh, restore-server.sh
+4. Настроен PostgreSQL для production
+5. Выполнена миграция 34 предприятий из SQLite в PostgreSQL
+6. Арендован VPS-сервер Timeweb (217.198.9.249)
+7. Выполнен деплой на сервер (без AI-функций):
+   - PostgreSQL с данными
+   - Backend API
+   - Frontend
+8. Создан docker-compose.simple.yml (упрощённая конфигурация без LLM)
+9. Сервер остановлен до интеграции авторизации
 
 ### Следующие шаги
-1. Арендовать VPS-сервер (рекомендации: Timeweb, Selectel, Hetzner)
-2. Выполнить деплой: `./scripts/deploy.sh user@server`
-3. Настроить .env.server с ANTHROPIC_API_KEY
+1. **Реализовать JWT-авторизацию** — приоритет!
+2. Добавить роли пользователей
+3. Защитить API-эндпоинты
+4. Запустить сервер
+5. Интегрировать AI-функции (опционально)
 
 ### Текущее состояние
-- Production работает локально: http://localhost:3000
-- PostgreSQL: 35 предприятий, 9 задач roadmap, 7 вех, 7 рисков
-- ChromaDB: 3 документа проиндексированы
+- **Сервер:** остановлен, данные сохранены в Docker volumes
+- **Локально:** production работает на http://localhost:3000
+- **Данные:** 34 предприятия, 9 задач, 7 вех, 7 рисков
 
 ---
 
-*Последнее обновление: 21 февраля 2026, 15:03*
+*Последнее обновление: 21 февраля 2026, 16:15*
