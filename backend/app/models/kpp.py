@@ -31,8 +31,9 @@ class KPPContract(Base):
     contract_date = Column(Date)
     start_date = Column(Date)
 
-    participants_count = Column(Integer, default=0)
+    participants_count = Column(Integer, default=0)  # Фактическое количество участников
     target_participants = Column(Integer)  # Планируемое количество
+    collections = Column(Float, default=0.0)  # Сумма взносов по договору (млн руб)
 
     contribution_scheme = Column(SQLEnum(ContributionScheme), default=ContributionScheme.MATCHING)
     employer_contribution_pct = Column(Float, default=0.0)

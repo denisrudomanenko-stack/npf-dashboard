@@ -2,9 +2,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List, Dict, Any
+import json
 
 from app.database import get_db
 from app.models import Enterprise, RoadmapItem, KPPContract, Risk, Milestone
+from app.models.sales_data import SalesData
+from app.models.dashboard_config import DashboardConfig
 
 router = APIRouter()
 
@@ -42,57 +45,168 @@ async def get_dashboard_data(db: AsyncSession = Depends(get_db)) -> Dict[str, An
 
 
 async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
-    """Calculate KPI metrics."""
+    """Calculate KPI metrics using configs and sales data.
 
-    # Total collections from active contracts
-    collections_result = await db.execute(
-        select(func.sum(KPPContract.participants_count))
-        .where(KPPContract.status == "active")
+    Returns 3 groups of KPI:
+    - bank: КПП в Банке (участники, проникновение, взносы работников, взносы банка)
+    - external: Внешние продажи (предприятия, договоры, участники, взносы)
+    - zk: Продажи в ЗК (количество ДДС, сумма взносов)
+
+    Data sources:
+    - bank: из таблицы sales_data (track=bank)
+    - external.enterprises/contracts: из таблицы enterprises
+    - external.participants/collections: из таблицы kpp_contracts
+    - zk: из таблицы sales_data (track=zk)
+    - penetration: расчёт participants / headcount × 100%
+    """
+
+    # Load KPI targets from config
+    config_result = await db.execute(
+        select(DashboardConfig).where(DashboardConfig.key == "kpi_targets")
     )
-    current_participants = collections_result.scalar() or 0
+    config = config_result.scalar_one_or_none()
 
-    # Count enterprises by status
+    # Load bank settings (headcount for penetration calculation)
+    bank_settings_result = await db.execute(
+        select(DashboardConfig).where(DashboardConfig.key == "bank_settings")
+    )
+    bank_settings_config = bank_settings_result.scalar_one_or_none()
+
+    bank_headcount = 32000  # Default
+    if bank_settings_config and bank_settings_config.value:
+        try:
+            bank_settings = json.loads(bank_settings_config.value)
+            bank_headcount = bank_settings.get("headcount", 32000)
+        except json.JSONDecodeError:
+            pass
+
+    # Default targets
+    targets = {
+        "bank_penetration_target": 17.0,
+        "bank_participants_target": 30000,
+        "bank_employee_contributions_target": 50.0,
+        "bank_bank_contributions_target": 25.0,
+        "external_enterprises_target": 50,
+        "external_contracts_target": 40,
+        "external_participants_target": 20000,
+        "external_collections_target": 1500.0,
+        "zk_dds_count_target": 5000,
+        "zk_dds_collections_target": 500.0,
+    }
+
+    if config and config.value:
+        try:
+            targets.update(json.loads(config.value))
+        except json.JSONDecodeError:
+            pass
+
+    # Get latest sales data for bank track
+    bank_data_result = await db.execute(
+        select(SalesData)
+        .where(SalesData.track == "bank")
+        .order_by(SalesData.date.desc())
+        .limit(1)
+    )
+    bank_data = bank_data_result.scalar_one_or_none()
+
+    # Get latest sales data for ZK track
+    zk_data_result = await db.execute(
+        select(SalesData)
+        .where(SalesData.track == "zk")
+        .order_by(SalesData.date.desc())
+        .limit(1)
+    )
+    zk_data = zk_data_result.scalar_one_or_none()
+
+    # Bank track data from sales_data
+    bank_participants = bank_data.participants if bank_data else 0
+    bank_employee_contributions = bank_data.employee_contributions if bank_data else 0
+    bank_bank_contributions = bank_data.bank_contributions if bank_data else 0
+
+    # Calculate penetration: participants / headcount × 100%
+    bank_penetration = (bank_participants / bank_headcount * 100) if bank_headcount > 0 else 0
+
+    # ZK track data from sales_data
+    zk_dds_count = zk_data.dds_count if zk_data else 0
+    zk_dds_collections = zk_data.dds_collections if zk_data else 0
+
+    # External: Count enterprises from DB
     enterprises_result = await db.execute(
         select(
-            func.count(Enterprise.id).filter(Enterprise.sales_status == "launched").label("launched"),
+            func.count(Enterprise.id).filter(Enterprise.sales_status != "planned").label("in_work"),
             func.count(Enterprise.id).label("total")
         )
     )
     ent_stats = enterprises_result.first()
+    external_enterprises_in_work = ent_stats.in_work if ent_stats else 0
+    external_enterprises_total = int(targets.get("external_enterprises_target", 50))
 
-    # Count active contracts
+    # External: Count contracts from enterprises table
     contracts_result = await db.execute(
-        select(func.count(KPPContract.id))
-        .where(KPPContract.status == "active")
+        select(func.count(Enterprise.id))
+        .where(Enterprise.sales_status.in_(["contract", "launched"]))
     )
-    active_contracts = contracts_result.scalar() or 0
+    external_contracts = contracts_result.scalar() or 0
 
-    # Calculate progress (based on milestones completed)
-    progress_result = await db.execute(
+    # External: Get participants and collections from kpp_contracts table
+    kpp_stats_result = await db.execute(
         select(
-            func.count(Milestone.id).filter(Milestone.status == "completed").label("completed"),
-            func.count(Milestone.id).label("total")
+            func.sum(KPPContract.participants_count).label("total_participants"),
+            func.sum(KPPContract.collections).label("total_collections")
         )
+        .where(KPPContract.status.in_(["signed", "active"]))
     )
-    progress_stats = progress_result.first()
-    progress_pct = 0
-    if progress_stats and progress_stats.total > 0:
-        progress_pct = int((progress_stats.completed / progress_stats.total) * 100)
+    kpp_stats = kpp_stats_result.first()
+    external_participants = int(kpp_stats.total_participants or 0) if kpp_stats else 0
+    external_collections = float(kpp_stats.total_collections or 0) if kpp_stats else 0
 
     return {
-        "collections": {
-            "current": 0.8,  # TODO: Calculate from actual financial data
-            "target": 3.0
+        "bank": {
+            "participants": {
+                "current": bank_participants,
+                "target": int(targets.get("bank_participants_target", 30000))
+            },
+            "penetration": {
+                "current": round(bank_penetration, 1),
+                "target": targets.get("bank_penetration_target", 17.0)
+            },
+            "employeeContributions": {
+                "current": round(bank_employee_contributions, 2),
+                "target": targets.get("bank_employee_contributions_target", 50.0)
+            },
+            "bankContributions": {
+                "current": round(bank_bank_contributions, 2),
+                "target": targets.get("bank_bank_contributions_target", 25.0)
+            }
         },
-        "participants": {
-            "current": current_participants,
-            "target": 4500
+        "external": {
+            "enterprises": {
+                "inWork": external_enterprises_in_work,
+                "total": external_enterprises_total
+            },
+            "contracts": {
+                "current": external_contracts,
+                "target": int(targets.get("external_contracts_target", 40))
+            },
+            "participants": {
+                "current": external_participants,
+                "target": int(targets.get("external_participants_target", 20000))
+            },
+            "collections": {
+                "current": round(external_collections, 2),
+                "target": targets.get("external_collections_target", 1500.0)
+            }
         },
-        "enterprises": {
-            "inProgress": ent_stats.total - ent_stats.launched if ent_stats else 0,
-            "total": ent_stats.total if ent_stats else 0
-        },
-        "progress": progress_pct
+        "zk": {
+            "ddsCount": {
+                "current": zk_dds_count,
+                "target": int(targets.get("zk_dds_count_target", 5000))
+            },
+            "ddsCollections": {
+                "current": round(zk_dds_collections, 2),
+                "target": targets.get("zk_dds_collections_target", 500.0)
+            }
+        }
     }
 
 
@@ -169,12 +283,11 @@ async def get_funnel_stats(db: AsyncSession) -> Dict[str, int]:
         select(Enterprise.sales_status, func.count(Enterprise.id))
         .group_by(Enterprise.sales_status)
     )
-    stats = {row[0].value if row[0] else "contact": row[1] for row in result.all()}
+    stats = {row[0].value if row[0] else "planned": row[1] for row in result.all()}
 
     return {
+        "planned": stats.get("planned", 0),
         "contact": stats.get("contact", 0),
-        "presentation": stats.get("presentation", 0),
-        "negotiation": stats.get("negotiation", 0),
         "contract": stats.get("contract", 0),
         "launched": stats.get("launched", 0)
     }
@@ -413,18 +526,18 @@ async def seed_dashboard_data(db: AsyncSession = Depends(get_db)):
 
     # Seed Enterprises
     enterprises_data = [
-        {"name": 'ПАО "НПО Энергомаш"', "score": 112, "category": "A", "sales_status": "negotiation"},
-        {"name": 'АО "РКК Энергия"', "score": 108, "category": "A", "sales_status": "presentation"},
-        {"name": 'АО "ИСС Решетнёва"', "score": 105, "category": "A", "sales_status": "contract"},
+        {"name": 'ПАО "НПО Энергомаш"', "score": 112, "category": "A", "sales_status": "contract"},
+        {"name": 'АО "РКК Энергия"', "score": 108, "category": "A", "sales_status": "contract"},
+        {"name": 'АО "ИСС Решетнёва"', "score": 105, "category": "A", "sales_status": "launched"},
         {"name": 'ФГУП "ЦЭНКИ"', "score": 98, "category": "A", "sales_status": "contact"},
-        {"name": 'АО "ГКНПЦ Хруничева"', "score": 95, "category": "B", "sales_status": "presentation"},
+        {"name": 'АО "ГКНПЦ Хруничева"', "score": 95, "category": "B", "sales_status": "contact"},
         {"name": 'АО "Композит"', "score": 88, "category": "B", "sales_status": "contact"},
-        {"name": 'ФГУП "НПО Техномаш"', "score": 82, "category": "B", "sales_status": "contact"},
-        {"name": 'АО "НИИ ТП"', "score": 78, "category": "B", "sales_status": "presentation"},
-        {"name": 'АО "НПО Лавочкина"', "score": 72, "category": "V", "sales_status": "contact"},
-        {"name": 'ФГУП "ЦНИИмаш"', "score": 68, "category": "V", "sales_status": "contact"},
-        {"name": 'АО "Российские космические системы"', "score": 65, "category": "V", "sales_status": "contact"},
-        {"name": 'ФГУП "НПЦАП"', "score": 45, "category": "G", "sales_status": "contact"},
+        {"name": 'ФГУП "НПО Техномаш"', "score": 82, "category": "B", "sales_status": "planned"},
+        {"name": 'АО "НИИ ТП"', "score": 78, "category": "B", "sales_status": "contact"},
+        {"name": 'АО "НПО Лавочкина"', "score": 72, "category": "V", "sales_status": "planned"},
+        {"name": 'ФГУП "ЦНИИмаш"', "score": 68, "category": "V", "sales_status": "planned"},
+        {"name": 'АО "Российские космические системы"', "score": 65, "category": "V", "sales_status": "planned"},
+        {"name": 'ФГУП "НПЦАП"', "score": 45, "category": "G", "sales_status": "planned"},
     ]
 
     for ent_data in enterprises_data:

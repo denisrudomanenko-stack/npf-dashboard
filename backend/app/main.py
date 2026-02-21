@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from app.database import init_db, async_session
-from app.api.v1.endpoints import enterprises, roadmap, documents, rag, conversations, dashboard, table_config
+from app.api.v1.endpoints import enterprises, roadmap, documents, rag, conversations, dashboard, table_config, sales_data, dashboard_config
 from app.models import Conversation, ChatMessage, LLMConfig  # Ensure models are registered
 from sqlalchemy import select
 
@@ -55,7 +55,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3004", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:3004", "http://localhost:5173", "http://localhost:3100"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -69,6 +69,8 @@ app.include_router(rag.router, prefix="/api/v1/rag", tags=["RAG"])
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["Conversations"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(table_config.router, prefix="/api/v1/table-config", tags=["Table Config"])
+app.include_router(sales_data.router, prefix="/api/v1/sales-data", tags=["Sales Data"])
+app.include_router(dashboard_config.router, prefix="/api/v1/dashboard-config", tags=["Dashboard Config"])
 
 
 @app.get("/health")

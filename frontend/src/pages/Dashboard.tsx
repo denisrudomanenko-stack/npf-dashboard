@@ -1,17 +1,25 @@
 import { useState, useEffect } from 'react'
 import { api } from '../services/api'
-
-// Format number with space separators (Russian locale)
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('ru-RU').format(value).replace(/\u00A0/g, ' ')
-}
+import DashboardSettingsModal from '../components/DashboardSettingsModal'
 
 // Types
 interface KPIData {
-  collections: { current: number; target: number }
-  participants: { current: number; target: number }
-  enterprises: { inProgress: number; total: number }
-  progress: number
+  bank: {
+    participants: { current: number; target: number }
+    penetration: { current: number; target: number }
+    employeeContributions: { current: number; target: number }
+    bankContributions: { current: number; target: number }
+  }
+  external: {
+    enterprises: { inWork: number; total: number }
+    contracts: { current: number; target: number }
+    participants: { current: number; target: number }
+    collections: { current: number; target: number }
+  }
+  zk: {
+    ddsCount: { current: number; target: number }
+    ddsCollections: { current: number; target: number }
+  }
 }
 
 interface TimelineTask {
@@ -28,7 +36,7 @@ interface Enterprise {
   name: string
   score: number
   category: 'A' | 'B' | 'V' | 'G'
-  status: 'contact' | 'presentation' | 'negotiation' | 'contract' | 'launched'
+  status: 'planned' | 'contact' | 'contract' | 'launched'
 }
 
 interface Risk {
@@ -48,10 +56,22 @@ interface Milestone {
 
 // Default data (used while loading)
 const defaultKpiData: KPIData = {
-  collections: { current: 0, target: 3.0 },
-  participants: { current: 0, target: 4500 },
-  enterprises: { inProgress: 0, total: 0 },
-  progress: 0
+  bank: {
+    participants: { current: 0, target: 0 },
+    penetration: { current: 0, target: 0 },
+    employeeContributions: { current: 0, target: 0 },
+    bankContributions: { current: 0, target: 0 }
+  },
+  external: {
+    enterprises: { inWork: 0, total: 0 },
+    contracts: { current: 0, target: 0 },
+    participants: { current: 0, target: 0 },
+    collections: { current: 0, target: 0 }
+  },
+  zk: {
+    ddsCount: { current: 0, target: 0 },
+    ddsCollections: { current: 0, target: 0 }
+  }
 }
 
 interface NewTaskForm {
@@ -71,9 +91,8 @@ const emptyTaskForm: NewTaskForm = {
 }
 
 interface FunnelStats {
+  planned: number
   contact: number
-  presentation: number
-  negotiation: number
   contract: number
   launched: number
 }
@@ -97,12 +116,13 @@ function Dashboard() {
   const [showArchive, setShowArchive] = useState(false)
   const [archivedTasks, setArchivedTasks] = useState<TimelineTask[]>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // Data from API
   const [kpiData, setKpiData] = useState<KPIData>(defaultKpiData)
   const [tasks, setTasks] = useState<TimelineTask[]>([])
   const [enterprises, setEnterprises] = useState<{ A: Enterprise[]; B: Enterprise[]; V: Enterprise[]; G: Enterprise[] }>({ A: [], B: [], V: [], G: [] })
-  const [funnelStats, setFunnelStats] = useState<FunnelStats>({ contact: 0, presentation: 0, negotiation: 0, contract: 0, launched: 0 })
+  const [funnelStats, setFunnelStats] = useState<FunnelStats>({ planned: 0, contact: 0, contract: 0, launched: 0 })
   const [risks, setRisks] = useState<Risk[]>([])
   const [milestones, setMilestones] = useState<Milestone[]>([])
 
@@ -317,79 +337,248 @@ function Dashboard() {
             по состоянию на {new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
           </span>
         </div>
-        {loading && <span className="loading-indicator">Загрузка...</span>}
+        <div className="header-actions">
+          {loading && <span className="loading-indicator">Загрузка...</span>}
+          <button className="btn-settings" onClick={() => setSettingsOpen(true)} title="Настройки дашборда">
+            Настройки
+          </button>
+        </div>
       </header>
 
-      {/* KPI Cards */}
-      <section className="kpi-section">
-        <div className="kpi-card">
-          <div className="kpi-icon">📊</div>
-          <div className="kpi-content">
-            <div className="kpi-label">Сборы КПП</div>
-            <div className="kpi-value">
-              <span className="current">{kpiData.collections.current}</span>
-              <span className="separator">/</span>
-              <span className="target">{kpiData.collections.target}</span>
+      {/* KPI Cards - 3 Groups */}
+      {/* Group 1: Внешние продажи */}
+      <section className="kpi-group">
+        <h3 className="kpi-group-title">Внешние продажи</h3>
+        <div className="kpi-section">
+          <div className="kpi-card kpi-highlight">
+            <div className="kpi-icon">💰</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Взносы</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.external.collections.current}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.external.collections.target}</span>
+              </div>
+              <div className="kpi-unit">млн руб</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.external.collections.target > 0 ? Math.min((kpiData.external.collections.current / kpiData.external.collections.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.external.collections.target > 0 ? Math.round((kpiData.external.collections.current / kpiData.external.collections.target) * 100) : 0}%</span>
+              </div>
             </div>
-            <div className="kpi-unit">млрд руб</div>
-            <div className="kpi-bar">
-              <div
-                className="kpi-bar-fill"
-                style={{ width: `${(kpiData.collections.current / kpiData.collections.target) * 100}%` }}
-              />
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-icon">🏢</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Предприятия</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.external.enterprises.inWork}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.external.enterprises.total}</span>
+              </div>
+              <div className="kpi-unit">в работе / всего</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.external.enterprises.total > 0 ? Math.min((kpiData.external.enterprises.inWork / kpiData.external.enterprises.total) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.external.enterprises.total > 0 ? Math.round((kpiData.external.enterprises.inWork / kpiData.external.enterprises.total) * 100) : 0}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-icon">📝</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Договоры</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.external.contracts.current}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.external.contracts.target}</span>
+              </div>
+              <div className="kpi-unit">шт</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.external.contracts.target > 0 ? Math.min((kpiData.external.contracts.current / kpiData.external.contracts.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.external.contracts.target > 0 ? Math.round((kpiData.external.contracts.current / kpiData.external.contracts.target) * 100) : 0}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-icon">👥</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Участники</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.external.participants.current.toLocaleString()}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.external.participants.target.toLocaleString()}</span>
+              </div>
+              <div className="kpi-unit">человек</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.external.participants.target > 0 ? Math.min((kpiData.external.participants.current / kpiData.external.participants.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.external.participants.target > 0 ? Math.round((kpiData.external.participants.current / kpiData.external.participants.target) * 100) : 0}%</span>
+              </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <div className="kpi-card">
-          <div className="kpi-icon">👥</div>
-          <div className="kpi-content">
-            <div className="kpi-label">Участники Банка</div>
-            <div className="kpi-value">
-              <span className="current">{formatNumber(kpiData.participants.current)}</span>
-              <span className="separator">/</span>
-              <span className="target">{formatNumber(kpiData.participants.target)}</span>
+      {/* Group 2: КПП в Банке */}
+      <section className="kpi-group">
+        <h3 className="kpi-group-title">КПП в Банке</h3>
+        <div className="kpi-section">
+          <div className="kpi-card kpi-highlight">
+            <div className="kpi-icon">👥</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Участники</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.bank.participants.current.toLocaleString()}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.bank.participants.target.toLocaleString()}</span>
+              </div>
+              <div className="kpi-unit">человек</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.bank.participants.target > 0 ? Math.min((kpiData.bank.participants.current / kpiData.bank.participants.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.bank.participants.target > 0 ? Math.round((kpiData.bank.participants.current / kpiData.bank.participants.target) * 100) : 0}%</span>
+              </div>
             </div>
-            <div className="kpi-unit">человек</div>
-            <div className="kpi-bar">
-              <div
-                className="kpi-bar-fill"
-                style={{ width: `${(kpiData.participants.current / kpiData.participants.target) * 100}%` }}
-              />
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-icon">📊</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Проникновение</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.bank.penetration.current}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.bank.penetration.target}%</span>
+              </div>
+              <div className="kpi-unit">% от всего</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.bank.penetration.target > 0 ? Math.min((kpiData.bank.penetration.current / kpiData.bank.penetration.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.bank.penetration.target > 0 ? Math.round((kpiData.bank.penetration.current / kpiData.bank.penetration.target) * 100) : 0}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-icon">💰</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Взносы работников</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.bank.employeeContributions.current}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.bank.employeeContributions.target}</span>
+              </div>
+              <div className="kpi-unit">млн руб</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.bank.employeeContributions.target > 0 ? Math.min((kpiData.bank.employeeContributions.current / kpiData.bank.employeeContributions.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.bank.employeeContributions.target > 0 ? Math.round((kpiData.bank.employeeContributions.current / kpiData.bank.employeeContributions.target) * 100) : 0}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-icon">🏦</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Взносы Банка</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.bank.bankContributions.current}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.bank.bankContributions.target}</span>
+              </div>
+              <div className="kpi-unit">млн руб</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.bank.bankContributions.target > 0 ? Math.min((kpiData.bank.bankContributions.current / kpiData.bank.bankContributions.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.bank.bankContributions.target > 0 ? Math.round((kpiData.bank.bankContributions.current / kpiData.bank.bankContributions.target) * 100) : 0}%</span>
+              </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <div className="kpi-card">
-          <div className="kpi-icon">🏢</div>
-          <div className="kpi-content">
-            <div className="kpi-label">Предприятий</div>
-            <div className="kpi-value">
-              <span className="current">{kpiData.enterprises.inProgress}</span>
-              <span className="separator">/</span>
-              <span className="target">{kpiData.enterprises.total}</span>
-            </div>
-            <div className="kpi-unit">в работе</div>
-            <div className="kpi-bar">
-              <div
-                className="kpi-bar-fill"
-                style={{ width: `${(kpiData.enterprises.inProgress / kpiData.enterprises.total) * 100}%` }}
-              />
+      {/* Group 3: Продажи в ЗК */}
+      <section className="kpi-group kpi-group-zk">
+        <h3 className="kpi-group-title">Продажи в ЗК</h3>
+        <div className="kpi-section kpi-section-zk">
+          <div className="kpi-card kpi-highlight">
+            <div className="kpi-icon">📋</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Количество ДДС</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.zk.ddsCount.current.toLocaleString()}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.zk.ddsCount.target.toLocaleString()}</span>
+              </div>
+              <div className="kpi-unit">договоров</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.zk.ddsCount.target > 0 ? Math.min((kpiData.zk.ddsCount.current / kpiData.zk.ddsCount.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.zk.ddsCount.target > 0 ? Math.round((kpiData.zk.ddsCount.current / kpiData.zk.ddsCount.target) * 100) : 0}%</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="kpi-card">
-          <div className="kpi-icon">📈</div>
-          <div className="kpi-content">
-            <div className="kpi-label">Прогресс плана</div>
-            <div className="kpi-value">
-              <span className="current">{kpiData.progress}</span>
-              <span className="target">%</span>
-            </div>
-            <div className="kpi-unit">выполнено</div>
-            <div className="kpi-bar">
-              <div className="kpi-bar-fill" style={{ width: `${kpiData.progress}%` }} />
+          <div className="kpi-card">
+            <div className="kpi-icon">💵</div>
+            <div className="kpi-content">
+              <div className="kpi-label">Сумма взносов</div>
+              <div className="kpi-value">
+                <span className="current">{kpiData.zk.ddsCollections.current}</span>
+                <span className="separator">/</span>
+                <span className="target">{kpiData.zk.ddsCollections.target}</span>
+              </div>
+              <div className="kpi-unit">млн руб</div>
+              <div className="kpi-progress">
+                <div className="kpi-bar">
+                  <div
+                    className="kpi-bar-fill"
+                    style={{ width: `${kpiData.zk.ddsCollections.target > 0 ? Math.min((kpiData.zk.ddsCollections.current / kpiData.zk.ddsCollections.target) * 100, 100) : 0}%` }}
+                  />
+                </div>
+                <span className="kpi-percent">{kpiData.zk.ddsCollections.target > 0 ? Math.round((kpiData.zk.ddsCollections.current / kpiData.zk.ddsCollections.target) * 100) : 0}%</span>
+              </div>
             </div>
           </div>
         </div>
@@ -557,26 +746,21 @@ function Dashboard() {
           <h2>Воронка продаж</h2>
           <div className="funnel-visual">
             <div className="funnel-stage" style={{ width: '100%' }}>
-              <span className="stage-label">Первый контакт</span>
-              <span className="stage-count">{funnelStats.contact + funnelStats.presentation + funnelStats.negotiation + funnelStats.contract + funnelStats.launched}</span>
+              <span className="stage-label">В планах</span>
+              <span className="stage-count">{funnelStats.planned + funnelStats.contact + funnelStats.contract + funnelStats.launched}</span>
             </div>
             <div className="funnel-connector"></div>
             <div className="funnel-stage" style={{ width: '75%' }}>
-              <span className="stage-label">Презентация</span>
-              <span className="stage-count">{funnelStats.presentation + funnelStats.negotiation + funnelStats.contract + funnelStats.launched}</span>
+              <span className="stage-label">Первый контакт</span>
+              <span className="stage-count">{funnelStats.contact + funnelStats.contract + funnelStats.launched}</span>
             </div>
             <div className="funnel-connector"></div>
             <div className="funnel-stage" style={{ width: '50%' }}>
-              <span className="stage-label">Переговоры</span>
-              <span className="stage-count">{funnelStats.negotiation + funnelStats.contract + funnelStats.launched}</span>
-            </div>
-            <div className="funnel-connector"></div>
-            <div className="funnel-stage" style={{ width: '35%' }}>
               <span className="stage-label">Договор</span>
               <span className="stage-count">{funnelStats.contract + funnelStats.launched}</span>
             </div>
             <div className="funnel-connector"></div>
-            <div className="funnel-stage launched" style={{ width: '20%' }}>
+            <div className="funnel-stage launched" style={{ width: '25%' }}>
               <span className="stage-label">Запущено</span>
               <span className="stage-count">{funnelStats.launched}</span>
             </div>
@@ -798,6 +982,13 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Settings Modal */}
+      <DashboardSettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSave={() => loadDashboardData()}
+      />
+
       {/* Confirmation Dialog */}
       {confirmAction && (
         <div className="modal-backdrop" onClick={() => setConfirmAction(null)}>
@@ -865,13 +1056,54 @@ function Dashboard() {
           background: #f0f0f0;
           border-radius: 12px;
         }
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .btn-settings {
+          padding: 8px 16px;
+          background: white;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          font-size: 13px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          color: var(--text);
+          transition: all 0.2s;
+        }
+        .btn-settings:hover {
+          background: #f0f0f0;
+          border-color: var(--primary);
+        }
+
+        /* KPI Groups */
+        .kpi-group {
+          margin-bottom: 16px;
+        }
+        .kpi-group-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-muted);
+          margin: 0 0 10px 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .kpi-group-zk .kpi-group-title {
+          color: #6366f1;
+        }
 
         /* KPI Section */
         .kpi-section {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
           gap: 16px;
-          margin-bottom: 24px;
+        }
+        .kpi-section-zk {
+          grid-template-columns: repeat(2, 1fr);
+          max-width: 50%;
         }
         .kpi-card {
           background: white;
@@ -880,6 +1112,10 @@ function Dashboard() {
           display: flex;
           gap: 12px;
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .kpi-card.kpi-highlight {
+          background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+          border: 1px solid #fcd34d;
         }
         .kpi-icon {
           font-size: 24px;
@@ -920,11 +1156,17 @@ function Dashboard() {
           font-size: 11px;
           color: var(--text-muted);
         }
+        .kpi-progress {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 8px;
+        }
         .kpi-bar {
+          flex: 1;
           height: 4px;
           background: #e5e7eb;
           border-radius: 2px;
-          margin-top: 8px;
           overflow: hidden;
         }
         .kpi-bar-fill {
@@ -932,6 +1174,13 @@ function Dashboard() {
           background: var(--primary);
           border-radius: 2px;
           transition: width 0.3s;
+        }
+        .kpi-percent {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--primary);
+          min-width: 36px;
+          text-align: right;
         }
 
         /* Track Tabs */
@@ -1784,6 +2033,9 @@ function Dashboard() {
         @media (max-width: 1200px) {
           .kpi-section {
             grid-template-columns: repeat(2, 1fr);
+          }
+          .kpi-section-zk {
+            max-width: 100%;
           }
         }
         @media (max-width: 900px) {
