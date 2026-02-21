@@ -366,7 +366,10 @@ function Dashboard() {
           <div className="kpi-card kpi-highlight">
             <div className="kpi-icon">💰</div>
             <div className="kpi-content">
-              <div className="kpi-label">Взносы</div>
+              <div className="kpi-label-row">
+                <div className="kpi-label">Взносы</div>
+                <div className="kpi-weight">50%</div>
+              </div>
               <div className="kpi-value">
                 <span className="current">{kpiData.external.collections.current}</span>
                 <span className="separator">/</span>
@@ -464,7 +467,10 @@ function Dashboard() {
           <div className="kpi-card kpi-highlight">
             <div className="kpi-icon">👥</div>
             <div className="kpi-content">
-              <div className="kpi-label">Участники</div>
+              <div className="kpi-label-row">
+                <div className="kpi-label">Участники</div>
+                <div className="kpi-weight">30%</div>
+              </div>
               <div className="kpi-value">
                 <span className="current">{kpiData.bank.participants.current.toLocaleString()}</span>
                 <span className="separator">/</span>
@@ -562,7 +568,10 @@ function Dashboard() {
           <div className="kpi-card kpi-highlight">
             <div className="kpi-icon">📋</div>
             <div className="kpi-content">
-              <div className="kpi-label">Количество ДДС</div>
+              <div className="kpi-label-row">
+                <div className="kpi-label">Количество ДДС</div>
+                <div className="kpi-weight">20%</div>
+              </div>
               <div className="kpi-value">
                 <span className="current">{kpiData.zk.ddsCount.current.toLocaleString()}</span>
                 <span className="separator">/</span>
@@ -1153,11 +1162,21 @@ function Dashboard() {
         .kpi-content {
           flex: 1;
         }
+        .kpi-label-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
         .kpi-label {
           font-size: 12px;
           color: var(--text-muted);
           text-transform: uppercase;
           letter-spacing: 0.5px;
+        }
+        .kpi-weight {
+          font-size: 12px;
+          color: #dc2626;
+          font-weight: 600;
         }
         .kpi-value {
           font-size: 24px;
