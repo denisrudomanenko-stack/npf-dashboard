@@ -23,6 +23,7 @@ class EnterpriseCategory(str, enum.Enum):
 class SalesStatus(str, enum.Enum):
     PLANNED = "planned"            # В планах
     CONTACT = "contact"            # Первый контакт
+    NEGOTIATION = "negotiation"    # Переговоры
     CONTRACT = "contract"          # Договор
     LAUNCHED = "launched"          # Запущено
 

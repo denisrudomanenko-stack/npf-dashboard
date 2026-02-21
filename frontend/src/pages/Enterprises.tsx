@@ -57,7 +57,7 @@ interface Enterprise {
   status: 'prospect' | 'negotiation' | 'pilot' | 'active' | 'inactive'
   category: 'A' | 'B' | 'V' | 'G'
   score: number
-  sales_status: 'planned' | 'contact' | 'contract' | 'launched'
+  sales_status: 'planned' | 'contact' | 'negotiation' | 'contract' | 'launched'
   inn: string | null
   holding: string | null
   locations: string | null
@@ -139,6 +139,7 @@ const categoryLabels: Record<string, string> = {
 const salesStatusLabels: Record<string, string> = {
   planned: 'В планах',
   contact: 'Первый контакт',
+  negotiation: 'Переговоры',
   contract: 'Договор',
   launched: 'Запущено'
 }
@@ -161,7 +162,7 @@ const interactionTypeIcons: Record<string, string> = {
   other: '📌'
 }
 
-const salesStages = ['planned', 'contact', 'contract', 'launched']
+const salesStages = ['planned', 'contact', 'negotiation', 'contract', 'launched']
 
 // Sortable column item component
 function SortableColumnItem({ column, onToggle, onRename }: {
@@ -1980,6 +1981,10 @@ function Enterprises() {
         .sales-contact {
           background: #fef3c7;
           color: #d97706;
+        }
+        .sales-negotiation {
+          background: #fce7f3;
+          color: #db2777;
         }
         .sales-contract {
           background: #dbeafe;

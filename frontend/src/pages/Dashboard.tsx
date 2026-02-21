@@ -106,6 +106,7 @@ const emptyTaskForm: NewTaskForm = {
 interface FunnelStats {
   planned: number
   contact: number
+  negotiation: number
   contract: number
   launched: number
 }
@@ -135,7 +136,7 @@ function Dashboard() {
   const [kpiData, setKpiData] = useState<KPIData>(defaultKpiData)
   const [tasks, setTasks] = useState<TimelineTask[]>([])
   const [enterprises, setEnterprises] = useState<{ A: Enterprise[]; B: Enterprise[]; V: Enterprise[]; G: Enterprise[] }>({ A: [], B: [], V: [], G: [] })
-  const [funnelStats, setFunnelStats] = useState<FunnelStats>({ planned: 0, contact: 0, contract: 0, launched: 0 })
+  const [funnelStats, setFunnelStats] = useState<FunnelStats>({ planned: 0, contact: 0, negotiation: 0, contract: 0, launched: 0 })
   const [risks, setRisks] = useState<Risk[]>([])
   const [milestones, setMilestones] = useState<Milestone[]>([])
 
@@ -779,20 +780,25 @@ function Dashboard() {
           <div className="funnel-visual">
             <div className="funnel-stage" style={{ width: '100%' }}>
               <span className="stage-label">В планах</span>
-              <span className="stage-count">{funnelStats.planned + funnelStats.contact + funnelStats.contract + funnelStats.launched}</span>
+              <span className="stage-count">{funnelStats.planned + funnelStats.contact + funnelStats.negotiation + funnelStats.contract + funnelStats.launched}</span>
             </div>
             <div className="funnel-connector"></div>
-            <div className="funnel-stage" style={{ width: '75%' }}>
+            <div className="funnel-stage" style={{ width: '80%' }}>
               <span className="stage-label">Первый контакт</span>
-              <span className="stage-count">{funnelStats.contact + funnelStats.contract + funnelStats.launched}</span>
+              <span className="stage-count">{funnelStats.contact + funnelStats.negotiation + funnelStats.contract + funnelStats.launched}</span>
             </div>
             <div className="funnel-connector"></div>
-            <div className="funnel-stage" style={{ width: '50%' }}>
+            <div className="funnel-stage" style={{ width: '60%' }}>
+              <span className="stage-label">Переговоры</span>
+              <span className="stage-count">{funnelStats.negotiation + funnelStats.contract + funnelStats.launched}</span>
+            </div>
+            <div className="funnel-connector"></div>
+            <div className="funnel-stage" style={{ width: '40%' }}>
               <span className="stage-label">Договор</span>
               <span className="stage-count">{funnelStats.contract + funnelStats.launched}</span>
             </div>
             <div className="funnel-connector"></div>
-            <div className="funnel-stage launched" style={{ width: '25%' }}>
+            <div className="funnel-stage launched" style={{ width: '20%' }}>
               <span className="stage-label">Запущено</span>
               <span className="stage-count">{funnelStats.launched}</span>
             </div>

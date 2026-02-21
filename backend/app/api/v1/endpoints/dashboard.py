@@ -314,6 +314,7 @@ async def get_funnel_stats(db: AsyncSession) -> Dict[str, int]:
     return {
         "planned": stats.get("planned", 0),
         "contact": stats.get("contact", 0),
+        "negotiation": stats.get("negotiation", 0),
         "contract": stats.get("contract", 0),
         "launched": stats.get("launched", 0)
     }
