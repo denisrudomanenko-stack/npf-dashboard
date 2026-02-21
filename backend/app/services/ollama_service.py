@@ -16,7 +16,7 @@ class OllamaService:
         self._available = None
 
     async def is_available(self) -> bool:
-        """Check if Ollama is running and has required models."""
+        """Check if Ollama is running and has embedding model."""
         if self._available is not None:
             return self._available
 
@@ -27,7 +27,6 @@ class OllamaService:
                     models = response.json().get("models", [])
                     model_names = [m.get("name", "").split(":")[0] for m in models]
                     has_embed = "nomic-embed-text" in model_names
-                    has_chat = any(m in model_names for m in ["qwen2.5", "llama3", "mistral"])
                     self._available = has_embed
                     if not has_embed:
                         logger.warning("nomic-embed-text model not found in Ollama")
@@ -35,6 +34,19 @@ class OllamaService:
         except Exception as e:
             logger.warning(f"Ollama not available: {e}")
             self._available = False
+        return False
+
+    async def has_chat_model(self) -> bool:
+        """Check if Ollama has a chat model available."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{self.base_url}/api/tags")
+                if response.status_code == 200:
+                    models = response.json().get("models", [])
+                    model_names = [m.get("name", "").split(":")[0] for m in models]
+                    return any(m in model_names for m in ["qwen2.5", "llama3", "mistral"])
+        except Exception:
+            pass
         return False
 
     async def embed(self, text: str) -> List[float]:

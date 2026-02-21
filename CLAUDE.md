@@ -22,11 +22,14 @@
 ### Docker (рекомендуется)
 
 ```bash
-# Development с hot-reload
+# Development с hot-reload (SQLite)
 docker compose -f docker-compose.dev.yml up --build
 
-# Production
-docker compose up --build
+# Production локально (PostgreSQL)
+docker compose -f docker-compose.prod.yml up -d
+
+# Server/Production (PostgreSQL + Claude API, без тяжёлых LLM)
+docker compose -f docker-compose.server.yml --env-file .env.server up -d
 ```
 
 ### Локально
@@ -51,10 +54,11 @@ ollama pull nomic-embed-text # Модель для эмбеддингов
 
 ### Доступ
 
-| Среда | Frontend | Backend | Ollama |
-|-------|----------|---------|--------|
-| Docker Dev | http://localhost:3100 | http://localhost:8100 | host:11434 |
-| Local | http://localhost:5173 | http://localhost:8000 | http://localhost:11434 |
+| Среда | Frontend | Backend | Database |
+|-------|----------|---------|----------|
+| Docker Dev | http://localhost:3100 | http://localhost:8100 | SQLite |
+| Docker Prod | http://localhost:3000 | http://localhost:8000 | PostgreSQL |
+| Local | http://localhost:5173 | http://localhost:8000 | SQLite |
 
 ---
 
@@ -75,9 +79,10 @@ ollama pull nomic-embed-text # Модель для эмбеддингов
 - **Pydantic** (validation)
 
 ### Infrastructure
-- **Docker** + docker-compose
-- **SQLite** (dev) → **PostgreSQL** (prod)
+- **Docker** + docker-compose (3 конфигурации: dev, prod, server)
+- **SQLite** (dev) / **PostgreSQL** (prod)
 - **Nginx** (static serving)
+- **Ollama** (embeddings: nomic-embed-text) + **Claude API** (LLM responses)
 
 ---
 
@@ -114,9 +119,19 @@ NPF-project/
 │   ├── DEVELOPMENT.md      # Руководство разработчика
 │   └── ROADMAP.md          # План развития
 │
-├── docker-compose.yml      # Production
-├── docker-compose.dev.yml  # Development
+├── scripts/                # Скрипты управления
+│   ├── deploy.sh           # Деплой на сервер с миграцией данных
+│   ├── backup.sh           # Локальный бэкап
+│   ├── backup-server.sh    # Бэкап с сервера
+│   ├── restore-server.sh   # Восстановление на сервер
+│   └── migrate_to_postgres.py  # Миграция SQLite → PostgreSQL
+│
+├── docker-compose.yml      # Production (legacy)
+├── docker-compose.dev.yml  # Development (SQLite)
+├── docker-compose.prod.yml # Production локально (PostgreSQL)
+├── docker-compose.server.yml # Server (PostgreSQL + Claude API)
 ├── .env.example            # Environment template
+├── .env.server.example     # Server environment template
 └── CLAUDE.md               # This file
 ```
 
@@ -157,7 +172,7 @@ NPF-project/
 - Настраиваемая таблица (drag-drop колонок, сортировка)
 - История контактов с клиентами
 - Фильтрация по категории, статусу, этапу продаж
-- **Этапы воронки продаж:** В планах → Первый контакт → Договор → Запущено
+- **Этапы воронки продаж:** В планах → Первый контакт → Переговоры → Договор → Запущено
 
 ### Roadmap
 - Задачи по кварталам
@@ -300,7 +315,7 @@ BACKEND_PORT=8000
 - [x] Dashboard с 10 KPI карточками в 3 группах
 - [x] CRUD для всех сущностей
 - [x] AI-чат с историей
-- [x] Docker конфигурация
+- [x] Docker конфигурация (dev, prod, server)
 - [x] Интеллектуальный импорт Excel с LLM-маппингом
 - [x] Настраиваемые таблицы (drag-drop, сортировка)
 - [x] История контактов с клиентами
@@ -310,14 +325,59 @@ BACKEND_PORT=8000
 - [x] Численность Банка для расчёта проникновения (с историей)
 - [x] Прогресс-бары с % выполнения в KPI карточках
 - [x] Автоматический расчёт целевых KPI по формулам
+- [x] **PostgreSQL для production** (docker-compose.prod.yml)
+- [x] **Скрипты деплоя** (deploy.sh, backup-server.sh, restore-server.sh)
+- [x] **Миграция SQLite → PostgreSQL** (migrate_to_postgres.py)
+- [x] **Server-конфигурация** (Ollama только для эмбеддингов + Claude API)
+- [x] Даты актуальности данных на KPI карточках
+- [x] Веса KPI (40%-30%-30%)
+- [x] Этап "Переговоры" в воронке продаж
 
 ### В планах
+- [ ] **Деплой на VPS-сервер** (ожидает аренды сервера)
 - [ ] Аутентификация (JWT + RBAC)
-- [ ] PostgreSQL для production
 - [ ] Email уведомления
 - [ ] Экспорт отчётов (PDF, Excel)
 - [ ] Интеграции (1C, CRM)
 
 ---
 
-*Последнее обновление: 21 февраля 2026*
+## Хранение данных (Production)
+
+| Данные | Docker Volume | Описание |
+|--------|---------------|----------|
+| PostgreSQL | `npf_postgres_data` | Основная БД (предприятия, KPI, настройки) |
+| ChromaDB | `npf_chroma` | Векторная база RAG |
+| Документы | `npf_documents` | PDF/DOCX файлы для RAG |
+| Uploads | `npf_uploads` | Загруженные файлы |
+| Ollama | `npf_ollama_embed` | Модель nomic-embed-text (~275 MB) |
+
+---
+
+## Последняя сессия (21 февраля 2026)
+
+### Выполнено
+1. Добавлены даты актуальности данных на KPI карточки
+2. Добавлены веса KPI (40%-30%-30%) на ключевые карточки
+3. Добавлен этап "Переговоры" в воронку продаж
+4. Настроен PostgreSQL для production (docker-compose.prod.yml)
+5. Выполнена миграция 35 предприятий из SQLite в PostgreSQL
+6. Перенесены документы RAG в Docker volume
+7. Создана server-конфигурация (docker-compose.server.yml):
+   - Ollama только для эмбеддингов (nomic-embed-text)
+   - Claude API для генерации ответов
+8. Созданы скрипты деплоя: deploy.sh, backup-server.sh, restore-server.sh
+
+### Следующие шаги
+1. Арендовать VPS-сервер (рекомендации: Timeweb, Selectel, Hetzner)
+2. Выполнить деплой: `./scripts/deploy.sh user@server`
+3. Настроить .env.server с ANTHROPIC_API_KEY
+
+### Текущее состояние
+- Production работает локально: http://localhost:3000
+- PostgreSQL: 35 предприятий, 9 задач roadmap, 7 вех, 7 рисков
+- ChromaDB: 3 документа проиндексированы
+
+---
+
+*Последнее обновление: 21 февраля 2026, 15:03*

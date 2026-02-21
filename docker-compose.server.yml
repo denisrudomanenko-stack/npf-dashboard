@@ -1,5 +1,9 @@
-# Production configuration with PostgreSQL
-# Usage: docker compose -f docker-compose.prod.yml up -d
+# Server/Production configuration
+# - PostgreSQL for data
+# - Ollama ONLY for embeddings (nomic-embed-text, ~275MB)
+# - Claude API for LLM responses
+#
+# Usage: docker compose -f docker-compose.server.yml up -d
 
 services:
   frontend:
@@ -25,16 +29,20 @@ services:
       - npf_chroma:/app/chroma_db
       - npf_documents:/app/data/documents
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-npf}:${POSTGRES_PASSWORD:-npf_secure_password}@postgres:5432/${POSTGRES_DB:-npf_db}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-npf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-npf_db}
       - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
       - OLLAMA_BASE_URL=http://ollama:11434
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - SECRET_KEY=${SECRET_KEY:-production-secret-key}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
       - APP_ENV=production
       - DEBUG=false
+      # Force Claude API for chat (Ollama only for embeddings)
+      - CHAT_PROVIDER=anthropic
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_started
     networks:
       - npf-network
     restart: unless-stopped
@@ -43,12 +51,10 @@ services:
     image: postgres:15-alpine
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-npf}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-npf_secure_password}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-npf_db}
     volumes:
       - npf_postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-npf} -d ${POSTGRES_DB:-npf_db}"]
       interval: 5s
@@ -61,20 +67,13 @@ services:
   ollama:
     image: ollama/ollama:latest
     volumes:
-      - npf_ollama_models:/root/.ollama
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      - npf_ollama_embed:/root/.ollama
+    # No external port - only internal access for embeddings
     networks:
       - npf-network
     restart: unless-stopped
-    # Для GPU раскомментируйте:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    # Auto-pull embedding model on startup
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull nomic-embed-text && wait"]
 
 networks:
   npf-network:
@@ -85,4 +84,4 @@ volumes:
   npf_uploads:
   npf_chroma:
   npf_documents:
-  npf_ollama_models:
+  npf_ollama_embed:

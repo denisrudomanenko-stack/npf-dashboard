@@ -39,9 +39,16 @@ class RAGService:
             self.anthropic_client = anthropic.Anthropic(api_key=api_key)
 
     async def _get_provider(self) -> str:
-        """Determine which LLM provider to use."""
-        if await ollama_service.is_available():
+        """Determine which LLM provider to use based on config."""
+        from app.config import settings
+
+        # If explicitly set to anthropic, use it (for production with embeddings-only Ollama)
+        if settings.chat_provider == "anthropic" and self.anthropic_client:
+            return "anthropic"
+        # Otherwise check Ollama availability for chat
+        if await ollama_service.is_available() and settings.chat_provider == "ollama":
             return "ollama"
+        # Fallback to anthropic if available
         elif self.anthropic_client:
             return "anthropic"
         return "none"
