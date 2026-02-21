@@ -9,16 +9,19 @@ interface KPIData {
     penetration: { current: number; target: number }
     employeeContributions: { current: number; target: number }
     bankContributions: { current: number; target: number }
+    dataDate: string | null
   }
   external: {
     enterprises: { inWork: number; total: number }
     contracts: { current: number; target: number }
     participants: { current: number; target: number }
     collections: { current: number; target: number }
+    dataDate: string | null
   }
   zk: {
     ddsCount: { current: number; target: number }
     ddsCollections: { current: number; target: number }
+    dataDate: string | null
   }
 }
 
@@ -60,18 +63,28 @@ const defaultKpiData: KPIData = {
     participants: { current: 0, target: 0 },
     penetration: { current: 0, target: 0 },
     employeeContributions: { current: 0, target: 0 },
-    bankContributions: { current: 0, target: 0 }
+    bankContributions: { current: 0, target: 0 },
+    dataDate: null
   },
   external: {
     enterprises: { inWork: 0, total: 0 },
     contracts: { current: 0, target: 0 },
     participants: { current: 0, target: 0 },
-    collections: { current: 0, target: 0 }
+    collections: { current: 0, target: 0 },
+    dataDate: null
   },
   zk: {
     ddsCount: { current: 0, target: 0 },
-    ddsCollections: { current: 0, target: 0 }
+    ddsCollections: { current: 0, target: 0 },
+    dataDate: null
   }
+}
+
+// Format date for display
+const formatDataDate = (dateStr: string | null): string => {
+  if (!dateStr) return 'нет данных'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 interface NewTaskForm {
@@ -369,6 +382,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.external.collections.target > 0 ? Math.round((kpiData.external.collections.current / kpiData.external.collections.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.external.dataDate)}</div>
             </div>
           </div>
 
@@ -391,6 +405,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.external.enterprises.total > 0 ? Math.round((kpiData.external.enterprises.inWork / kpiData.external.enterprises.total) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.external.dataDate)}</div>
             </div>
           </div>
 
@@ -413,6 +428,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.external.contracts.target > 0 ? Math.round((kpiData.external.contracts.current / kpiData.external.contracts.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.external.dataDate)}</div>
             </div>
           </div>
 
@@ -435,6 +451,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.external.participants.target > 0 ? Math.round((kpiData.external.participants.current / kpiData.external.participants.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.external.dataDate)}</div>
             </div>
           </div>
         </div>
@@ -463,6 +480,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.bank.participants.target > 0 ? Math.round((kpiData.bank.participants.current / kpiData.bank.participants.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.bank.dataDate)}</div>
             </div>
           </div>
 
@@ -485,6 +503,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.bank.penetration.target > 0 ? Math.round((kpiData.bank.penetration.current / kpiData.bank.penetration.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.bank.dataDate)}</div>
             </div>
           </div>
 
@@ -507,6 +526,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.bank.employeeContributions.target > 0 ? Math.round((kpiData.bank.employeeContributions.current / kpiData.bank.employeeContributions.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.bank.dataDate)}</div>
             </div>
           </div>
 
@@ -529,6 +549,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.bank.bankContributions.target > 0 ? Math.round((kpiData.bank.bankContributions.current / kpiData.bank.bankContributions.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.bank.dataDate)}</div>
             </div>
           </div>
         </div>
@@ -557,6 +578,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.zk.ddsCount.target > 0 ? Math.round((kpiData.zk.ddsCount.current / kpiData.zk.ddsCount.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.zk.dataDate)}</div>
             </div>
           </div>
 
@@ -579,6 +601,7 @@ function Dashboard() {
                 </div>
                 <span className="kpi-percent">{kpiData.zk.ddsCollections.target > 0 ? Math.round((kpiData.zk.ddsCollections.current / kpiData.zk.ddsCollections.target) * 100) : 0}%</span>
               </div>
+              <div className="kpi-date">на {formatDataDate(kpiData.zk.dataDate)}</div>
             </div>
           </div>
         </div>
@@ -1155,6 +1178,13 @@ function Dashboard() {
         .kpi-unit {
           font-size: 11px;
           color: var(--text-muted);
+        }
+        .kpi-date {
+          font-size: 10px;
+          color: #9ca3af;
+          margin-top: 6px;
+          padding-top: 6px;
+          border-top: 1px dashed #e5e7eb;
         }
         .kpi-progress {
           display: flex;

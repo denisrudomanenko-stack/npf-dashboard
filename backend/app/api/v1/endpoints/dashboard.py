@@ -108,6 +108,7 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
         .limit(1)
     )
     bank_data = bank_data_result.scalar_one_or_none()
+    bank_data_date = bank_data.date.isoformat() if bank_data and bank_data.date else None
 
     # Get latest sales data for ZK track
     zk_data_result = await db.execute(
@@ -117,6 +118,17 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
         .limit(1)
     )
     zk_data = zk_data_result.scalar_one_or_none()
+    zk_data_date = zk_data.date.isoformat() if zk_data and zk_data.date else None
+
+    # Get latest sales data for external track
+    external_data_result = await db.execute(
+        select(SalesData)
+        .where(SalesData.track == "external")
+        .order_by(SalesData.date.desc())
+        .limit(1)
+    )
+    external_data = external_data_result.scalar_one_or_none()
+    external_data_date = external_data.date.isoformat() if external_data and external_data.date else None
 
     # Bank track data from sales_data
     bank_participants = bank_data.participants if bank_data else 0
@@ -188,7 +200,8 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
             "bankContributions": {
                 "current": round(bank_bank_contributions, 2),
                 "target": targets.get("bank_bank_contributions_target", 25.0)
-            }
+            },
+            "dataDate": bank_data_date
         },
         "external": {
             "enterprises": {
@@ -206,7 +219,8 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
             "collections": {
                 "current": round(external_collections, 2),
                 "target": targets.get("external_collections_target", 1500.0)
-            }
+            },
+            "dataDate": external_data_date
         },
         "zk": {
             "ddsCount": {
@@ -216,7 +230,8 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
             "ddsCollections": {
                 "current": round(zk_dds_collections, 2),
                 "target": round(zk_dds_collections_target, 1)
-            }
+            },
+            "dataDate": zk_data_date
         }
     }
 
