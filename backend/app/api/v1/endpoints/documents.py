@@ -13,9 +13,11 @@ import mimetypes
 
 from app.database import get_db
 from app.models.document import Document, DocumentStatus, DocumentType
+from app.models.user import User
 from app.schemas.document import DocumentResponse
 from app.services.document_service import document_service, CHUNK_CONFIG
 from app.config import settings
+from app.auth.dependencies import get_current_active_user, require_manager
 
 router = APIRouter()
 
@@ -36,7 +38,8 @@ async def get_documents(
     limit: int = 100,
     status: DocumentStatus = None,
     document_type: DocumentType = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get all documents from database."""
     query = select(Document).where(Document.status != DocumentStatus.DELETED)
@@ -50,13 +53,17 @@ async def get_documents(
 
 
 @router.get("/indexed")
-async def get_indexed_documents():
+async def get_indexed_documents(
+    current_user: User = Depends(get_current_active_user)
+):
     """Get all documents indexed in the RAG knowledge base."""
     return document_service.list_documents()
 
 
 @router.get("/types")
-async def get_document_types():
+async def get_document_types(
+    current_user: User = Depends(get_current_active_user)
+):
     """Get available document types with chunk configurations."""
     return {
         "types": list(CHUNK_CONFIG.keys()),
@@ -66,13 +73,19 @@ async def get_document_types():
 
 
 @router.get("/stats")
-async def get_document_stats():
+async def get_document_stats(
+    current_user: User = Depends(get_current_active_user)
+):
     """Get knowledge base statistics."""
     return document_service.get_stats()
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-async def get_document(document_id: int, db: AsyncSession = Depends(get_db)):
+async def get_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
     if not doc:
@@ -87,7 +100,8 @@ async def upload_document(
     title: str = Form(default=None),
     description: str = Form(default=None),
     auto_index: bool = Form(default=True),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Upload and optionally index a document for RAG."""
     allowed_extensions = {'.pdf', '.docx', '.txt', '.md', '.xlsx', '.xls', '.csv'}
@@ -187,7 +201,8 @@ async def add_text_document(
     title: str = Form(...),
     content: str = Form(...),
     document_type: str = Form(default="other"),
-    description: str = Form(default=None)
+    description: str = Form(default=None),
+    current_user: User = Depends(require_manager)
 ):
     """Add a text document directly to the knowledge base."""
     if not content.strip():
@@ -207,7 +222,8 @@ async def add_text_document(
 async def search_documents(
     query: str = Form(...),
     top_k: int = Form(default=5),
-    doc_type: str = Form(default=None)
+    doc_type: str = Form(default=None),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Search the knowledge base."""
     if not query.strip():
@@ -230,7 +246,8 @@ class ReindexRequest(BaseModel):
 async def reindex_document(
     document_id: int,
     request: ReindexRequest = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Re-index a document in the vector database with optional category change."""
     result = await db.execute(select(Document).where(Document.id == document_id))
@@ -282,7 +299,11 @@ async def reindex_document(
 
 
 @router.patch("/{document_id}/archive")
-async def archive_document(document_id: int, db: AsyncSession = Depends(get_db)):
+async def archive_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Archive document and remove from search."""
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
@@ -296,7 +317,11 @@ async def archive_document(document_id: int, db: AsyncSession = Depends(get_db))
 
 
 @router.delete("/{document_id}")
-async def delete_document(document_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Soft delete document and remove from RAG."""
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
@@ -317,7 +342,10 @@ async def delete_document(document_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/indexed/{doc_id}")
-async def delete_indexed_document(doc_id: str):
+async def delete_indexed_document(
+    doc_id: str,
+    current_user: User = Depends(require_manager)
+):
     """Delete a document from the RAG knowledge base by its RAG doc_id."""
     success = await document_service.delete_document(doc_id)
     if success:
@@ -326,7 +354,11 @@ async def delete_indexed_document(doc_id: str):
 
 
 @router.get("/{document_id}/download")
-async def download_document(document_id: int, db: AsyncSession = Depends(get_db)):
+async def download_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Download the original document file."""
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
@@ -349,7 +381,11 @@ async def download_document(document_id: int, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/{document_id}/suggest-name")
-async def suggest_document_name(document_id: int, db: AsyncSession = Depends(get_db)):
+async def suggest_document_name(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Analyze document and suggest a name based on content."""
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
@@ -435,7 +471,8 @@ async def suggest_document_name(document_id: int, db: AsyncSession = Depends(get
 async def rename_document(
     document_id: int,
     new_title: str = Form(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Rename a document."""
     result = await db.execute(select(Document).where(Document.id == document_id))
@@ -459,7 +496,8 @@ async def rename_document(
 async def change_document_category(
     document_id: int,
     document_type: str = Form(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Change document category."""
     result = await db.execute(select(Document).where(Document.id == document_id))
@@ -486,7 +524,11 @@ async def change_document_category(
 
 
 @router.post("/{document_id}/ocr")
-async def ocr_document(document_id: int, db: AsyncSession = Depends(get_db)):
+async def ocr_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Perform OCR on a PDF document using Anthropic Claude Vision."""
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()

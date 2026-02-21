@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { api } from '../services/api'
+import { usePermissions } from '../hooks/usePermissions'
 import {
   DndContext,
   closestCenter,
@@ -204,6 +205,7 @@ function SortableColumnItem({ column, onToggle, onRename }: {
 }
 
 function Enterprises() {
+  const { canEdit } = usePermissions()
   const [enterprises, setEnterprises] = useState<Enterprise[]>([])
   const [loading, setLoading] = useState(true)
   const [showImport, setShowImport] = useState(false)
@@ -709,17 +711,19 @@ function Enterprises() {
     <div className="enterprises">
       <div className="page-header">
         <h2>Предприятия</h2>
-        <div className="actions">
-          <button className="btn btn-secondary" onClick={() => setShowImport(!showImport)}>
-            Импорт Excel
-          </button>
-          <button className="btn btn-primary" onClick={openCreateModal}>
-            + Добавить
-          </button>
-        </div>
+        {canEdit && (
+          <div className="actions">
+            <button className="btn btn-secondary" onClick={() => setShowImport(!showImport)}>
+              Импорт Excel
+            </button>
+            <button className="btn btn-primary" onClick={openCreateModal}>
+              + Добавить
+            </button>
+          </div>
+        )}
       </div>
 
-      {showImport && (
+      {canEdit && showImport && (
         <div className="card import-card">
           <h4>Импорт из файла</h4>
           <p>Поддерживаются форматы: .xlsx, .xls, .csv</p>
@@ -754,7 +758,7 @@ function Enterprises() {
       </div>
 
       {/* Bulk Actions Toolbar */}
-      {selectedIds.size > 0 && (
+      {canEdit && selectedIds.size > 0 && (
         <div className="bulk-toolbar">
           <span className="bulk-count">Выбрано: {selectedIds.size}</span>
           <button className="btn btn-danger btn-sm" onClick={handleBulkDelete} disabled={bulkDeleting}>
@@ -770,14 +774,16 @@ function Enterprises() {
         <table>
           <thead>
             <tr>
-              <th className="checkbox-th">
-                <input
-                  type="checkbox"
-                  checked={filteredEnterprises.length > 0 && selectedIds.size === filteredEnterprises.length}
-                  onChange={toggleSelectAll}
-                  title="Выбрать все"
-                />
-              </th>
+              {canEdit && (
+                <th className="checkbox-th">
+                  <input
+                    type="checkbox"
+                    checked={filteredEnterprises.length > 0 && selectedIds.size === filteredEnterprises.length}
+                    onChange={toggleSelectAll}
+                    title="Выбрать все"
+                  />
+                </th>
+              )}
               {visibleColumns.map(col => (
                 <th
                   key={col.id}
@@ -802,22 +808,24 @@ function Enterprises() {
           <tbody>
             {filteredEnterprises.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={visibleColumns.length + (canEdit ? 2 : 1)} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                   {enterprises.length === 0
-                    ? 'Нет данных. Импортируйте файл или добавьте предприятие.'
+                    ? (canEdit ? 'Нет данных. Импортируйте файл или добавьте предприятие.' : 'Нет данных.')
                     : 'Нет результатов по заданным фильтрам.'}
                 </td>
               </tr>
             ) : (
               filteredEnterprises.map((e) => (
                 <tr key={e.id} onClick={() => openCard(e)} className={`clickable-row ${selectedIds.has(e.id) ? 'selected-row' : ''}`}>
-                  <td className="checkbox-cell" onClick={(ev) => ev.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(e.id)}
-                      onChange={() => toggleSelect(e.id)}
-                    />
-                  </td>
+                  {canEdit && (
+                    <td className="checkbox-cell" onClick={(ev) => ev.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(e.id)}
+                        onChange={() => toggleSelect(e.id)}
+                      />
+                    </td>
+                  )}
                   {visibleColumns.map(col => (
                     <td key={col.id}>{getCellValue(e, col.id)}</td>
                   ))}
@@ -908,7 +916,7 @@ function Enterprises() {
                   <h2>{selectedEnterprise.name}</h2>
                 )}
                 <div className="card-actions">
-                  {!editMode && (
+                  {canEdit && !editMode && (
                     <button className="btn-icon" onClick={() => setEditMode(true)} title="Редактировать">
                       ✏️
                     </button>
@@ -1140,7 +1148,7 @@ function Enterprises() {
               <div className="section">
                 <div className="section-header">
                   <h3>История контактов</h3>
-                  {!editMode && !showAddInteraction && (
+                  {canEdit && !editMode && !showAddInteraction && (
                     <button
                       className="btn btn-sm btn-primary"
                       onClick={() => { setShowAddInteraction(true); setEditingInteraction(null); setNewInteraction(defaultInteraction); }}
@@ -1211,7 +1219,7 @@ function Enterprises() {
                           <div className="interaction-header">
                             <span className="interaction-type">{interactionTypeLabels[interaction.interaction_type]}</span>
                             <span className="interaction-date">{formatDate(interaction.date)}</span>
-                            {!editMode && (
+                            {canEdit && !editMode && (
                               <div className="interaction-actions">
                                 <button
                                   className="btn-edit-interaction"
@@ -1262,41 +1270,43 @@ function Enterprises() {
               </div>
             </div>
 
-            <div className="card-footer">
-              {confirmDelete ? (
-                <div className="delete-confirm">
-                  <span>Удалить предприятие?</span>
-                  <button className="btn btn-danger" onClick={handleDelete} disabled={saving}>
-                    {saving ? '...' : 'Да, удалить'}
-                  </button>
-                  <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>
-                    Отмена
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <button className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
-                    Удалить
-                  </button>
-                  <div className="footer-right">
-                    {editMode ? (
-                      <>
-                        <button className="btn btn-secondary" onClick={() => { setEditMode(false); setEditData(selectedEnterprise); }}>
-                          Отмена
-                        </button>
-                        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                          {saving ? 'Сохранение...' : 'Сохранить'}
-                        </button>
-                      </>
-                    ) : (
-                      <button className="btn btn-primary" onClick={() => setEditMode(true)}>
-                        Редактировать
-                      </button>
-                    )}
+            {canEdit && (
+              <div className="card-footer">
+                {confirmDelete ? (
+                  <div className="delete-confirm">
+                    <span>Удалить предприятие?</span>
+                    <button className="btn btn-danger" onClick={handleDelete} disabled={saving}>
+                      {saving ? '...' : 'Да, удалить'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>
+                      Отмена
+                    </button>
                   </div>
-                </>
-              )}
-            </div>
+                ) : (
+                  <>
+                    <button className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
+                      Удалить
+                    </button>
+                    <div className="footer-right">
+                      {editMode ? (
+                        <>
+                          <button className="btn btn-secondary" onClick={() => { setEditMode(false); setEditData(selectedEnterprise); }}>
+                            Отмена
+                          </button>
+                          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                            {saving ? 'Сохранение...' : 'Сохранить'}
+                          </button>
+                        </>
+                      ) : (
+                        <button className="btn btn-primary" onClick={() => setEditMode(true)}>
+                          Редактировать
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2449,7 +2459,44 @@ function Enterprises() {
           font-weight: 500;
         }
 
-        @media (max-width: 600px) {
+        /* Responsive - Tablet */
+        @media (max-width: 1024px) {
+          .enterprises {
+            padding: 16px;
+          }
+          .page-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+          .actions {
+            justify-content: flex-start;
+          }
+          .filters-row {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .search-input {
+            min-width: 100%;
+          }
+          .filters-row select {
+            width: 100%;
+          }
+          .results-count {
+            text-align: center;
+          }
+          /* Table horizontal scroll */
+          .card {
+            overflow-x: auto;
+          }
+          table {
+            min-width: 800px;
+          }
+          /* Client Card */
+          .client-card {
+            width: 95vw;
+            max-width: 600px;
+          }
           .info-grid {
             grid-template-columns: 1fr;
           }
@@ -2457,7 +2504,171 @@ function Enterprises() {
             flex-wrap: wrap;
           }
           .funnel-stage {
-            min-width: calc(33% - 4px);
+            min-width: calc(50% - 4px);
+          }
+        }
+
+        /* Responsive - Mobile */
+        @media (max-width: 640px) {
+          .enterprises {
+            padding: 12px;
+          }
+          .page-header h2 {
+            font-size: 20px;
+          }
+          .actions {
+            flex-direction: column;
+            width: 100%;
+          }
+          .actions .btn {
+            width: 100%;
+            justify-content: center;
+          }
+          .import-card {
+            padding: 12px;
+          }
+          .bulk-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+          }
+          .bulk-count {
+            text-align: center;
+          }
+          .bulk-toolbar .btn {
+            width: 100%;
+            justify-content: center;
+          }
+          /* Table adjustments */
+          th, td {
+            padding: 8px;
+            font-size: 12px;
+          }
+          .checkbox-th,
+          .checkbox-cell {
+            width: 32px;
+          }
+          /* Client Card mobile */
+          .client-card {
+            width: 100vw;
+            max-width: 100vw;
+            height: 100vh;
+            max-height: 100vh;
+            border-radius: 0;
+            margin: 0;
+          }
+          .card-header {
+            padding: 14px;
+          }
+          .card-header h2 {
+            font-size: 16px;
+          }
+          .card-body {
+            padding: 14px;
+          }
+          .card-footer {
+            padding: 14px;
+            flex-direction: column;
+            gap: 10px;
+          }
+          .card-footer .btn {
+            width: 100%;
+            justify-content: center;
+          }
+          .footer-right {
+            width: 100%;
+            display: flex;
+            gap: 8px;
+          }
+          .footer-right .btn {
+            flex: 1;
+          }
+          .section h3 {
+            font-size: 13px;
+          }
+          .info-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+          }
+          .info-item .info-label {
+            min-width: auto;
+          }
+          .sales-funnel {
+            gap: 4px;
+          }
+          .funnel-stage {
+            min-width: 100%;
+            padding: 8px;
+          }
+          .funnel-label {
+            font-size: 10px;
+          }
+          .funnel-count {
+            font-size: 14px;
+          }
+          /* Interactions mobile */
+          .add-interaction-form {
+            padding: 12px;
+          }
+          .add-interaction-form .form-row {
+            flex-direction: column;
+          }
+          .interaction-item {
+            padding: 10px;
+          }
+          .interaction-actions {
+            position: static;
+            margin-top: 8px;
+          }
+          /* Import Modal mobile */
+          .import-modal {
+            width: 100vw;
+            max-width: 100vw;
+            height: 100vh;
+            max-height: 100vh;
+            border-radius: 0;
+          }
+          .import-modal .modal-header,
+          .import-modal .modal-body,
+          .import-modal .modal-footer {
+            padding: 12px;
+          }
+          .mapping-row {
+            flex-direction: column;
+            gap: 8px;
+          }
+          .col-source, .col-target {
+            width: 100%;
+          }
+          /* Column Config Modal mobile */
+          .config-modal {
+            width: 100vw;
+            max-width: 100vw;
+            height: auto;
+            max-height: 90vh;
+            border-radius: 12px 12px 0 0;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+          }
+          /* Create Modal mobile */
+          .create-card {
+            width: 100vw;
+            max-width: 100vw;
+            height: 100vh;
+            max-height: 100vh;
+            border-radius: 0;
+          }
+        }
+
+        /* Very small screens */
+        @media (max-width: 380px) {
+          .card-meta {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
           }
         }
       `}</style>

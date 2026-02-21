@@ -10,11 +10,13 @@ from app.models.interaction import Interaction, InteractionType
 from app.models.table_config import TableConfig
 from app.models.sales_data import SalesData
 from app.models.dashboard_config import DashboardConfig
+from app.models.user import User, UserRole
 
 __all__ = [
     "Enterprise", "EnterpriseCategory", "SalesStatus",
     "RoadmapItem", "KPPContract", "Document",
     "Conversation", "ChatMessage", "LLMConfig",
     "Risk", "Milestone", "Interaction", "InteractionType",
-    "TableConfig", "SalesData", "DashboardConfig"
+    "TableConfig", "SalesData", "DashboardConfig",
+    "User", "UserRole"
 ]

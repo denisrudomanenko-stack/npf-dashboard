@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '../services/api'
 import DashboardSettingsModal from '../components/DashboardSettingsModal'
+import { usePermissions } from '../hooks/usePermissions'
 
 // Types
 interface KPIData {
@@ -121,6 +122,7 @@ interface DashboardData {
 }
 
 function Dashboard() {
+  const { canEdit, canAccessSettings } = usePermissions()
   const [activeTrack, setActiveTrack] = useState<'all' | 'internal' | 'external'>('all')
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState<NewTaskForm>(emptyTaskForm)
@@ -353,9 +355,11 @@ function Dashboard() {
         </div>
         <div className="header-actions">
           {loading && <span className="loading-indicator">Загрузка...</span>}
-          <button className="btn-settings" onClick={() => setSettingsOpen(true)} title="Настройки дашборда">
-            Настройки
-          </button>
+          {canAccessSettings && (
+            <button className="btn-settings" onClick={() => setSettingsOpen(true)} title="Настройки дашборда">
+              Настройки
+            </button>
+          )}
         </div>
       </header>
 
@@ -643,9 +647,11 @@ function Dashboard() {
             Трек 2: Внешние клиенты
           </button>
         </div>
-        <button className="btn-add-task" onClick={() => setShowAddTask(true)}>
-          + Задача
-        </button>
+        {canEdit && (
+          <button className="btn-add-task" onClick={() => setShowAddTask(true)}>
+            + Задача
+          </button>
+        )}
       </section>
 
       {/* Timeline */}
@@ -694,29 +700,31 @@ function Dashboard() {
                   }}
                 />
               </div>
-              <div className="task-actions">
-                <button
-                  className="action-btn edit"
-                  onClick={() => handleEditTask(task)}
-                  title="Редактировать"
-                >
-                  ✎
-                </button>
-                <button
-                  className="action-btn archive"
-                  onClick={() => setConfirmAction({ type: 'archive', task })}
-                  title="Архивировать"
-                >
-                  📁
-                </button>
-                <button
-                  className="action-btn delete"
-                  onClick={() => setConfirmAction({ type: 'delete', task })}
-                  title="Удалить"
-                >
-                  ✕
-                </button>
-              </div>
+              {canEdit && (
+                <div className="task-actions">
+                  <button
+                    className="action-btn edit"
+                    onClick={() => handleEditTask(task)}
+                    title="Редактировать"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="action-btn archive"
+                    onClick={() => setConfirmAction({ type: 'archive', task })}
+                    title="Архивировать"
+                  >
+                    📁
+                  </button>
+                  <button
+                    className="action-btn delete"
+                    onClick={() => setConfirmAction({ type: 'delete', task })}
+                    title="Удалить"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           {/* Current date indicator line */}
@@ -1004,13 +1012,15 @@ function Dashboard() {
                           Q{task.startQ}–Q{task.endQ} • {task.track === 'internal' ? 'Внутренний' : 'Внешний'}
                         </span>
                       </div>
-                      <button
-                        className="btn-restore"
-                        onClick={() => handleRestoreTask(task)}
-                        title="Восстановить"
-                      >
-                        ↩ Восстановить
-                      </button>
+                      {canEdit && (
+                        <button
+                          className="btn-restore"
+                          onClick={() => handleRestoreTask(task)}
+                          title="Восстановить"
+                        >
+                          ↩ Восстановить
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2088,7 +2098,7 @@ function Dashboard() {
           color: white;
         }
 
-        /* Responsive */
+        /* Responsive - Tablet */
         @media (max-width: 1200px) {
           .kpi-section {
             grid-template-columns: repeat(2, 1fr);
@@ -2097,7 +2107,24 @@ function Dashboard() {
             max-width: 100%;
           }
         }
-        @media (max-width: 900px) {
+
+        @media (max-width: 1024px) {
+          .dashboard-page {
+            padding: 16px;
+          }
+          .dashboard-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+          }
+          .header-left {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+          }
+          .dashboard-header h1 {
+            font-size: 20px;
+          }
           .main-grid,
           .bottom-grid {
             grid-template-columns: 1fr;
@@ -2108,15 +2135,205 @@ function Dashboard() {
           }
           .tabs-group {
             flex-wrap: wrap;
+            width: 100%;
+          }
+          .track-tab {
+            flex: 1;
+            justify-content: center;
+            min-width: 140px;
+          }
+          .btn-add-task {
+            width: 100%;
+          }
+          .timeline-legend {
+            justify-content: center;
           }
         }
-        @media (max-width: 600px) {
+
+        /* Responsive - Mobile */
+        @media (max-width: 640px) {
+          .dashboard-page {
+            padding: 12px;
+          }
+          .dashboard-header h1 {
+            font-size: 18px;
+          }
           .kpi-section {
             grid-template-columns: 1fr;
+            gap: 12px;
+          }
+          .kpi-card {
+            padding: 14px;
+          }
+          .kpi-icon {
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+          }
+          .kpi-value {
+            font-size: 20px;
+          }
+          .kpi-group-title {
+            font-size: 12px;
+          }
+
+          /* Timeline mobile */
+          .timeline-section {
+            padding: 12px;
+            overflow-x: auto;
+          }
+          .timeline-header-row {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .timeline-legend {
+            display: none;
+          }
+          .timeline-grid {
+            min-width: 500px;
           }
           .timeline-label {
-            width: 120px;
-            font-size: 11px;
+            width: 100px;
+            font-size: 10px;
+          }
+          .current-date-line-container > .timeline-label {
+            width: 100px;
+          }
+          .task-actions {
+            opacity: 1;
+            flex-direction: column;
+            gap: 2px;
+          }
+          .action-btn {
+            width: 20px;
+            height: 20px;
+            font-size: 10px;
+          }
+
+          /* Track tabs mobile */
+          .tabs-group {
+            flex-direction: column;
+            gap: 6px;
+          }
+          .track-tab {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 12px;
+          }
+
+          /* Pipeline & Funnel mobile */
+          .pipeline-section,
+          .funnel-section,
+          .risk-section,
+          .milestones-section {
+            padding: 14px;
+          }
+          .pipeline-section h2,
+          .funnel-section h2,
+          .risk-section h2,
+          .milestones-section h2 {
+            font-size: 14px;
+          }
+          .funnel-stage {
+            padding: 10px 12px;
+          }
+          .stage-label {
+            font-size: 12px;
+          }
+          .stage-count {
+            font-size: 16px;
+          }
+
+          /* Risk matrix mobile */
+          .matrix-cell {
+            width: 50px;
+            height: 35px;
+          }
+          .risk-badge {
+            width: 18px;
+            height: 18px;
+            font-size: 10px;
+          }
+          .risk-list-item {
+            flex-wrap: wrap;
+          }
+          .risk-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+          }
+          .risk-title {
+            white-space: normal;
+          }
+
+          /* Milestones mobile */
+          .milestone-item {
+            padding: 6px 10px;
+            font-size: 12px;
+            gap: 8px;
+          }
+          .milestone-month {
+            width: 28px;
+          }
+
+          /* Modal mobile */
+          .modal-box {
+            width: 95vw;
+            margin: 16px;
+            max-height: 85vh;
+          }
+          .modal-header {
+            padding: 12px 16px;
+          }
+          .modal-body {
+            padding: 16px;
+          }
+          .modal-footer {
+            padding: 12px 16px;
+            flex-wrap: wrap;
+          }
+          .form-row {
+            grid-template-columns: 1fr;
+          }
+          .confirm-dialog {
+            width: 90vw;
+            padding: 20px;
+          }
+          .confirm-icon {
+            font-size: 36px;
+          }
+          .confirm-dialog h3 {
+            font-size: 16px;
+          }
+          .confirm-buttons {
+            flex-direction: column;
+          }
+          .confirm-buttons button {
+            width: 100%;
+          }
+          .archive-modal {
+            width: 95vw;
+          }
+        }
+
+        /* Very small screens */
+        @media (max-width: 380px) {
+          .kpi-card {
+            flex-direction: column;
+            text-align: center;
+          }
+          .kpi-icon {
+            margin: 0 auto;
+          }
+          .kpi-label-row {
+            justify-content: center;
+          }
+          .kpi-progress {
+            flex-direction: column;
+            gap: 4px;
+          }
+          .kpi-percent {
+            text-align: center;
           }
         }
       `}</style>

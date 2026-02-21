@@ -27,8 +27,13 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-npf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-npf_db}
       - SECRET_KEY=${SECRET_KEY}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       - APP_ENV=production
       - DEBUG=false
+      # Initial admin (created on first start)
+      - INIT_ADMIN_USERNAME=${INIT_ADMIN_USERNAME:-}
+      - INIT_ADMIN_EMAIL=${INIT_ADMIN_EMAIL:-}
+      - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
       # AI disabled
       - OLLAMA_BASE_URL=
       - ANTHROPIC_API_KEY=

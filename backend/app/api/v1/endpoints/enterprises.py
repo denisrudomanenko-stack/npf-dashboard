@@ -13,8 +13,10 @@ import httpx
 from app.database import get_db
 from app.models.enterprise import Enterprise, EnterpriseStatus, EnterpriseCategory, SalesStatus
 from app.models.interaction import Interaction
+from app.models.user import User
 from app.schemas.enterprise import EnterpriseCreate, EnterpriseUpdate, EnterpriseResponse, InteractionCreate, InteractionResponse
 from app.config import settings
+from app.auth.dependencies import get_current_active_user, require_manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -237,7 +239,8 @@ async def get_enterprises(
     skip: int = 0,
     limit: int = 100,
     status: EnterpriseStatus = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     query = select(Enterprise).options(selectinload(Enterprise.interactions))
     if status:
@@ -248,7 +251,11 @@ async def get_enterprises(
 
 
 @router.get("/{enterprise_id}", response_model=EnterpriseResponse)
-async def get_enterprise(enterprise_id: int, db: AsyncSession = Depends(get_db)):
+async def get_enterprise(
+    enterprise_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     result = await db.execute(
         select(Enterprise)
         .options(selectinload(Enterprise.interactions))
@@ -263,7 +270,8 @@ async def get_enterprise(enterprise_id: int, db: AsyncSession = Depends(get_db))
 @router.post("/", response_model=EnterpriseResponse)
 async def create_enterprise(
     enterprise: EnterpriseCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     db_enterprise = Enterprise(**enterprise.model_dump())
     db.add(db_enterprise)
@@ -276,7 +284,8 @@ async def create_enterprise(
 async def update_enterprise(
     enterprise_id: int,
     enterprise: EnterpriseUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     result = await db.execute(select(Enterprise).where(Enterprise.id == enterprise_id))
     db_enterprise = result.scalar_one_or_none()
@@ -292,7 +301,11 @@ async def update_enterprise(
 
 
 @router.delete("/{enterprise_id}")
-async def delete_enterprise(enterprise_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_enterprise(
+    enterprise_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     result = await db.execute(select(Enterprise).where(Enterprise.id == enterprise_id))
     enterprise = result.scalar_one_or_none()
     if not enterprise:
@@ -304,7 +317,10 @@ async def delete_enterprise(enterprise_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.post("/import/preview")
-async def preview_import(file: UploadFile = File(...)):
+async def preview_import(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_manager)
+):
     """Preview Excel/CSV file and suggest column mapping"""
     if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
         raise HTTPException(status_code=400, detail="File must be Excel or CSV")
@@ -352,7 +368,8 @@ async def preview_import(file: UploadFile = File(...)):
 async def import_enterprises(
     file: UploadFile = File(...),
     mapping: str = Form(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Import enterprises from Excel/CSV file with custom column mapping"""
     if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
@@ -442,7 +459,11 @@ async def import_enterprises(
 # --- Interactions ---
 
 @router.get("/{enterprise_id}/interactions", response_model=List[InteractionResponse])
-async def get_interactions(enterprise_id: int, db: AsyncSession = Depends(get_db)):
+async def get_interactions(
+    enterprise_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Get all interactions for an enterprise"""
     result = await db.execute(
         select(Interaction)
@@ -456,7 +477,8 @@ async def get_interactions(enterprise_id: int, db: AsyncSession = Depends(get_db
 async def create_interaction(
     enterprise_id: int,
     interaction: InteractionCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Add a new interaction to an enterprise"""
     # Check enterprise exists
@@ -479,7 +501,8 @@ async def update_interaction(
     enterprise_id: int,
     interaction_id: int,
     interaction_data: InteractionCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Update an interaction"""
     result = await db.execute(
@@ -503,7 +526,8 @@ async def update_interaction(
 async def delete_interaction(
     enterprise_id: int,
     interaction_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Delete an interaction"""
     result = await db.execute(

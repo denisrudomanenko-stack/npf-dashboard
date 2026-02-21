@@ -8,8 +8,8 @@ import os
 from pathlib import Path
 
 from app.database import init_db, async_session
-from app.api.v1.endpoints import enterprises, roadmap, documents, rag, conversations, dashboard, table_config, sales_data, dashboard_config
-from app.models import Conversation, ChatMessage, LLMConfig  # Ensure models are registered
+from app.api.v1.endpoints import enterprises, roadmap, documents, rag, conversations, dashboard, table_config, sales_data, dashboard_config, auth, users
+from app.models import Conversation, ChatMessage, LLMConfig, User  # Ensure models are registered
 from sqlalchemy import select
 
 load_dotenv()
@@ -62,6 +62,8 @@ app.add_middleware(
 )
 
 # Routers
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 app.include_router(enterprises.router, prefix="/api/v1/enterprises", tags=["Enterprises"])
 app.include_router(roadmap.router, prefix="/api/v1/roadmap", tags=["Roadmap"])
 app.include_router(documents.router, prefix="/api/v1/documents", tags=["Documents"])

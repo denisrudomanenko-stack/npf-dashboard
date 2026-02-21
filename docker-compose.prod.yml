@@ -32,6 +32,10 @@ services:
       - SECRET_KEY=${SECRET_KEY:-production-secret-key}
       - APP_ENV=production
       - DEBUG=false
+      # Initial admin (created on first start)
+      - INIT_ADMIN_USERNAME=${INIT_ADMIN_USERNAME:-}
+      - INIT_ADMIN_EMAIL=${INIT_ADMIN_EMAIL:-}
+      - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy

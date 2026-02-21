@@ -5,7 +5,9 @@ from typing import List
 
 from app.database import get_db
 from app.models.roadmap import RoadmapItem, Track, RoadmapStatus
+from app.models.user import User
 from app.schemas.roadmap import RoadmapItemCreate, RoadmapItemUpdate, RoadmapItemResponse
+from app.auth.dependencies import get_current_active_user, require_manager
 
 router = APIRouter()
 
@@ -17,7 +19,8 @@ async def get_roadmap_items(
     track: Track = None,
     status: RoadmapStatus = None,
     year: int = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     query = select(RoadmapItem)
     if track:
@@ -32,14 +35,22 @@ async def get_roadmap_items(
 
 
 @router.get("/by-track/{track}", response_model=List[RoadmapItemResponse])
-async def get_roadmap_by_track(track: Track, db: AsyncSession = Depends(get_db)):
+async def get_roadmap_by_track(
+    track: Track,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     query = select(RoadmapItem).where(RoadmapItem.track == track).order_by(RoadmapItem.start_date)
     result = await db.execute(query)
     return result.scalars().all()
 
 
 @router.get("/{item_id}", response_model=RoadmapItemResponse)
-async def get_roadmap_item(item_id: int, db: AsyncSession = Depends(get_db)):
+async def get_roadmap_item(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     result = await db.execute(select(RoadmapItem).where(RoadmapItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
@@ -50,7 +61,8 @@ async def get_roadmap_item(item_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=RoadmapItemResponse)
 async def create_roadmap_item(
     item: RoadmapItemCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     db_item = RoadmapItem(**item.model_dump())
     db.add(db_item)
@@ -63,7 +75,8 @@ async def create_roadmap_item(
 async def update_roadmap_item(
     item_id: int,
     item: RoadmapItemUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     result = await db.execute(select(RoadmapItem).where(RoadmapItem.id == item_id))
     db_item = result.scalar_one_or_none()
@@ -79,7 +92,11 @@ async def update_roadmap_item(
 
 
 @router.delete("/{item_id}")
-async def delete_roadmap_item(item_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_roadmap_item(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     result = await db.execute(select(RoadmapItem).where(RoadmapItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
@@ -94,7 +111,8 @@ async def delete_roadmap_item(item_id: int, db: AsyncSession = Depends(get_db)):
 async def update_roadmap_status(
     item_id: int,
     status: RoadmapStatus,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     result = await db.execute(select(RoadmapItem).where(RoadmapItem.id == item_id))
     item = result.scalar_one_or_none()

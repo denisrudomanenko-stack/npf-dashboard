@@ -199,6 +199,7 @@ NPF-project/
 
 | Модель | Таблица | Описание |
 |--------|---------|----------|
+| User | users | Пользователи системы (логин, роль, пароль) |
 | Enterprise | enterprises | Корпоративные клиенты (ИНН, холдинг, контакты, история) |
 | Interaction | interactions | История контактов с клиентами |
 | RoadmapItem | roadmap_items | Задачи дорожной карты |
@@ -218,11 +219,24 @@ NPF-project/
 ## API Endpoints
 
 ```
+# Auth (public)
+POST /api/v1/auth/login     # Получить JWT-токен
+GET  /api/v1/auth/me        # Текущий пользователь (требует токен)
+
+# Users (admin only)
+GET    /api/v1/users/       # Список пользователей
+POST   /api/v1/users/       # Создать пользователя
+GET    /api/v1/users/{id}   # Получить пользователя
+PUT    /api/v1/users/{id}   # Обновить пользователя
+DELETE /api/v1/users/{id}   # Удалить пользователя
+
+# Enterprises (manager+)
 /api/v1/enterprises/              # CRUD предприятий
 /api/v1/enterprises/import/preview  # Предпросмотр импорта с LLM-маппингом
 /api/v1/enterprises/import        # Импорт с кастомным маппингом
 /api/v1/enterprises/{id}/interactions  # История контактов
 
+# Other (viewer+ for read, manager+ for write)
 /api/v1/roadmap/        # CRUD дорожной карты
 /api/v1/documents/      # Управление документами
 /api/v1/rag/            # RAG запросы и чат
@@ -230,7 +244,7 @@ NPF-project/
 /api/v1/dashboard/      # Агрегированные данные
 /api/v1/table-config/   # Настройки таблиц
 /api/v1/sales-data/     # CRUD оперативных данных продаж
-/api/v1/dashboard-config/ # Конфигурация дашборда (KPI, скоринг, риски)
+/api/v1/dashboard-config/ # Конфигурация дашборда (admin only для изменений)
 
 /health                 # Health check
 /docs                   # Swagger UI
@@ -335,15 +349,14 @@ BACKEND_PORT=8000
 - [x] Этап "Переговоры" в воронке продаж
 - [x] **Деплой на VPS Timeweb** (217.198.9.249) — остановлен до интеграции авторизации
 - [x] **Упрощённая конфигурация** (docker-compose.simple.yml) — без AI/LLM
+- [x] **JWT-авторизация** с ролями (admin, manager, viewer)
+- [x] **Защита всех API-эндпоинтов** (требуется токен)
+- [x] **Страница входа** и управление пользователями
+- [x] **Скрипт создания администратора** (scripts/create_admin.py)
 
 ### В планах
 
-#### Приоритет 1: Безопасность
-- [ ] **Аутентификация (JWT + RBAC)** — требуется для запуска сервера
-- [ ] Роли пользователей (admin, manager, viewer)
-- [ ] Защита API-эндпоинтов
-
-#### Приоритет 2: AI-функции (после авторизации)
+#### Приоритет 1: AI-функции
 - [ ] Интеграция AI-ассистента на сервере
 - [ ] ChromaDB для RAG (векторный поиск)
 - [ ] Ollama для эмбеддингов (nomic-embed-text)
@@ -397,31 +410,60 @@ docker compose -f docker-compose.simple.yml down
 ## Последняя сессия (21 февраля 2026)
 
 ### Выполнено
-1. Добавлены даты актуальности данных на KPI карточки
-2. Добавлены веса KPI (40%-30%-30%) на ключевые карточки
-3. Добавлен этап "Переговоры" в воронку продаж
-4. Настроен PostgreSQL для production
-5. Выполнена миграция 34 предприятий из SQLite в PostgreSQL
-6. Арендован VPS-сервер Timeweb (217.198.9.249)
-7. Выполнен деплой на сервер (без AI-функций):
-   - PostgreSQL с данными
-   - Backend API
-   - Frontend
-8. Создан docker-compose.simple.yml (упрощённая конфигурация без LLM)
-9. Сервер остановлен до интеграции авторизации
+1. **JWT-авторизация реализована полностью:**
+   - Модель User с ролями (admin, manager, viewer)
+   - JWT-токены (24 часа, bcrypt хеширование)
+   - Защита всех API-эндпоинтов
+   - Страница входа (Login)
+   - Страница управления пользователями (Users, только admin)
+   - Компонент UserMenu в шапке
+   - Скрипт создания администратора
+
+2. **Права доступа:**
+   - viewer: только просмотр
+   - manager: просмотр + редактирование
+   - admin: полный доступ + управление пользователями
+
+3. **Новые файлы:**
+   - `backend/app/models/user.py` — модель User
+   - `backend/app/schemas/user.py` — Pydantic схемы
+   - `backend/app/auth/` — модуль авторизации
+   - `backend/app/api/v1/endpoints/auth.py` — /login, /me
+   - `backend/app/api/v1/endpoints/users.py` — CRUD пользователей
+   - `scripts/create_admin.py` — создание админа
+   - `frontend/src/stores/authStore.ts` — Zustand store
+   - `frontend/src/types/auth.ts` — TypeScript типы
+   - `frontend/src/pages/Login.tsx` — страница входа
+   - `frontend/src/pages/Users.tsx` — управление пользователями
+   - `frontend/src/components/ProtectedRoute.tsx` — защита роутов
+   - `frontend/src/components/UserMenu.tsx` — меню пользователя
+
+### Создание администратора
+
+**Локально:**
+```bash
+cd backend && python3 ../scripts/create_admin.py --username admin --email admin@npf.ru --password secret123
+```
+
+**Docker:** Добавьте в `.env.server`:
+```
+INIT_ADMIN_USERNAME=admin
+INIT_ADMIN_EMAIL=admin@npf.ru
+INIT_ADMIN_PASSWORD=your_secure_password
+```
 
 ### Следующие шаги
-1. **Реализовать JWT-авторизацию** — приоритет!
-2. Добавить роли пользователей
-3. Защитить API-эндпоинты
-4. Запустить сервер
-5. Интегрировать AI-функции (опционально)
+1. Запустить backend: `uvicorn app.main:app --reload`
+2. Запустить frontend: `npm run dev`
+3. Войти и проверить работу
+4. Деплой на сервер
 
 ### Текущее состояние
-- **Сервер:** остановлен, данные сохранены в Docker volumes
-- **Локально:** production работает на http://localhost:3000
+- **Авторизация:** реализована
+- **Сервер:** готов к запуску
+- **Локально:** требуется создать администратора
 - **Данные:** 34 предприятия, 9 задач, 7 вех, 7 рисков
 
 ---
 
-*Последнее обновление: 21 февраля 2026, 16:15*
+*Последнее обновление: 21 февраля 2026*

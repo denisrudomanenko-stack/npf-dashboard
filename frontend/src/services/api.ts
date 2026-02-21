@@ -29,6 +29,10 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
+      // Redirect to login if not already there
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
     }
     console.error('API Error:', error.response?.data || error.message)
     return Promise.reject(error)

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { api } from '../services/api'
+import { usePermissions } from '../hooks/usePermissions'
 
 interface Document {
   id: number
@@ -39,6 +40,7 @@ const DOC_TYPES = [
 ]
 
 function Documents() {
+  const { canEdit } = usePermissions()
   const [documents, setDocuments] = useState<Document[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -272,32 +274,34 @@ function Documents() {
         </div>
 
         {/* Upload */}
-        <div className="upload-section">
-          <div className="panel-subtitle">Загрузка</div>
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".pdf,.docx,.txt,.md,.xlsx,.xls,.csv"
-            onChange={handleUpload}
-            style={{ display: 'none' }}
-          />
-          <button
-            className="upload-btn"
-            onClick={openUploadModal}
-            disabled={uploading}
-            title="Загрузить новый документ. Сначала выберите категорию, затем файл."
-          >
-            {uploading ? (
-              <><span className="spinner-sm"></span> Загрузка...</>
-            ) : (
-              <>📁 Загрузить документ</>
-            )}
-          </button>
-          <div className="upload-hint">
-            PDF, DOCX, TXT, XLSX, CSV<br/>
-            Макс. размер: {MAX_FILE_SIZE_MB} МБ
+        {canEdit && (
+          <div className="upload-section">
+            <div className="panel-subtitle">Загрузка</div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".pdf,.docx,.txt,.md,.xlsx,.xls,.csv"
+              onChange={handleUpload}
+              style={{ display: 'none' }}
+            />
+            <button
+              className="upload-btn"
+              onClick={openUploadModal}
+              disabled={uploading}
+              title="Загрузить новый документ. Сначала выберите категорию, затем файл."
+            >
+              {uploading ? (
+                <><span className="spinner-sm"></span> Загрузка...</>
+              ) : (
+                <>📁 Загрузить документ</>
+              )}
+            </button>
+            <div className="upload-hint">
+              PDF, DOCX, TXT, XLSX, CSV<br/>
+              Макс. размер: {MAX_FILE_SIZE_MB} МБ
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Info */}
         <div className="info-section">
@@ -348,14 +352,20 @@ function Documents() {
                 {documents.map((doc) => (
                   <tr key={doc.id} className={processing === doc.id ? 'processing' : ''}>
                     <td className="doc-name-cell">
-                      <div
-                        className="doc-name editable"
-                        onClick={() => openNamingModal(doc)}
-                        title="Нажмите для изменения названия"
-                      >
-                        {doc.title || doc.original_filename}
-                        <span className="edit-icon">✏️</span>
-                      </div>
+                      {canEdit ? (
+                        <div
+                          className="doc-name editable"
+                          onClick={() => openNamingModal(doc)}
+                          title="Нажмите для изменения названия"
+                        >
+                          {doc.title || doc.original_filename}
+                          <span className="edit-icon">✏️</span>
+                        </div>
+                      ) : (
+                        <div className="doc-name">
+                          {doc.title || doc.original_filename}
+                        </div>
+                      )}
                       <div className="doc-meta">{doc.file_type?.toUpperCase()}</div>
                     </td>
                     <td>
@@ -363,8 +373,8 @@ function Documents() {
                         className="category-select"
                         value={doc.document_type || 'other'}
                         onChange={(e) => handleInlineCategoryChange(doc.id, e.target.value)}
-                        disabled={processing === doc.id}
-                        title="Выберите категорию документа"
+                        disabled={!canEdit || processing === doc.id}
+                        title={canEdit ? "Выберите категорию документа" : "Только просмотр"}
                       >
                         {DOC_TYPES.map(t => (
                           <option key={t.value} value={t.value}>{t.label}</option>
@@ -373,14 +383,16 @@ function Documents() {
                     </td>
                     <td>{getStatusBadge(doc)}</td>
                     <td className="actions-cell">
-                      <button
-                        className="action-btn-text btn-vectorize"
-                        onClick={() => openVectorizeModal(doc)}
-                        disabled={processing === doc.id || (doc.indexed_at !== null && doc.chunk_count > 0)}
-                        title={doc.indexed_at ? `Уже в индексе (${doc.chunk_count} фрагм.)` : `Добавить в поисковый индекс (макс. ${MAX_INDEX_SIZE_MB} МБ)`}
-                      >
-                        🔍 Векторизировать
-                      </button>
+                      {canEdit && (
+                        <button
+                          className="action-btn-text btn-vectorize"
+                          onClick={() => openVectorizeModal(doc)}
+                          disabled={processing === doc.id || (doc.indexed_at !== null && doc.chunk_count > 0)}
+                          title={doc.indexed_at ? `Уже в индексе (${doc.chunk_count} фрагм.)` : `Добавить в поисковый индекс (макс. ${MAX_INDEX_SIZE_MB} МБ)`}
+                        >
+                          🔍 Векторизировать
+                        </button>
+                      )}
                       <button
                         className="action-btn-icon"
                         onClick={() => setPreviewDoc(doc)}
@@ -388,14 +400,16 @@ function Documents() {
                       >
                         📖
                       </button>
-                      <button
-                        className="action-btn-icon"
-                        onClick={() => handleArchive(doc)}
-                        disabled={processing === doc.id || doc.status === 'archived'}
-                        title="Переместить в архив"
-                      >
-                        📦
-                      </button>
+                      {canEdit && (
+                        <button
+                          className="action-btn-icon"
+                          onClick={() => handleArchive(doc)}
+                          disabled={processing === doc.id || doc.status === 'archived'}
+                          title="Переместить в архив"
+                        >
+                          📦
+                        </button>
+                      )}
                       <button
                         className="action-btn-icon"
                         onClick={() => handleDownload(doc)}
@@ -403,14 +417,16 @@ function Documents() {
                       >
                         ⬇️
                       </button>
-                      <button
-                        className="action-btn-icon btn-delete"
-                        onClick={() => handleDelete(doc)}
-                        disabled={processing === doc.id}
-                        title="Удалить документ"
-                      >
-                        🗑️
-                      </button>
+                      {canEdit && (
+                        <button
+                          className="action-btn-icon btn-delete"
+                          onClick={() => handleDelete(doc)}
+                          disabled={processing === doc.id}
+                          title="Удалить документ"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1155,7 +1171,7 @@ function Documents() {
           background: #6d28d9;
         }
 
-        /* Responsive */
+        /* Responsive - Large tablets */
         @media (max-width: 1200px) {
           .docs-wrapper {
             grid-template-columns: 220px 1fr;
@@ -1167,6 +1183,8 @@ function Documents() {
             padding: 16px;
           }
         }
+
+        /* Responsive - Tablets */
         @media (max-width: 1000px) {
           .docs-wrapper {
             grid-template-columns: 200px 1fr;
@@ -1176,7 +1194,13 @@ function Documents() {
             height: 28px;
             font-size: 12px;
           }
+          .action-btn-text {
+            padding: 4px 8px;
+            font-size: 10px;
+          }
         }
+
+        /* Responsive - Small tablets */
         @media (max-width: 800px) {
           .docs-wrapper {
             grid-template-columns: 60px 1fr;
@@ -1211,6 +1235,140 @@ function Documents() {
           }
           .docs-content {
             padding: 12px;
+          }
+          /* Table horizontal scroll */
+          .docs-table-wrapper {
+            overflow-x: auto;
+          }
+          table {
+            min-width: 600px;
+          }
+        }
+
+        /* Responsive - Mobile */
+        @media (max-width: 640px) {
+          .docs-wrapper {
+            grid-template-columns: 1fr;
+            grid-template-rows: auto 1fr;
+          }
+          .docs-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            flex-direction: row;
+            padding: 8px 12px;
+            background: white;
+            border-top: 1px solid var(--border);
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 100;
+            justify-content: space-around;
+          }
+          .stats-section,
+          .info-section {
+            display: none;
+          }
+          .upload-section {
+            margin: 0;
+          }
+          .upload-btn {
+            padding: 10px 16px;
+            border-radius: 20px;
+          }
+          .upload-btn span:not(.spinner-sm) {
+            display: inline;
+            font-size: 12px;
+          }
+          .docs-main {
+            padding-bottom: 70px;
+          }
+          .docs-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 12px;
+          }
+          .docs-header h1 {
+            font-size: 18px;
+          }
+          .docs-content {
+            padding: 8px;
+          }
+          /* Table mobile */
+          table {
+            min-width: 500px;
+          }
+          th, td {
+            padding: 8px 6px;
+            font-size: 12px;
+          }
+          .doc-name-cell {
+            max-width: 150px;
+          }
+          .doc-name {
+            font-size: 12px;
+          }
+          .doc-meta {
+            font-size: 9px;
+          }
+          .category-select {
+            padding: 4px 6px;
+            font-size: 11px;
+            max-width: 100px;
+          }
+          .actions-cell {
+            display: flex;
+            gap: 2px;
+            flex-wrap: wrap;
+          }
+          .action-btn-text {
+            display: none;
+          }
+          .action-btn-icon {
+            width: 26px;
+            height: 26px;
+            font-size: 11px;
+          }
+          /* Modals mobile */
+          .modal {
+            width: 95vw;
+            max-width: 400px;
+            max-height: 80vh;
+          }
+          .modal-header {
+            padding: 12px 16px;
+          }
+          .modal-header h2 {
+            font-size: 16px;
+          }
+          .modal-body {
+            padding: 16px;
+          }
+          .modal-footer {
+            padding: 12px 16px;
+            flex-direction: column;
+            gap: 8px;
+          }
+          .modal-footer button {
+            width: 100%;
+          }
+          .llm-badge {
+            font-size: 9px;
+            padding: 2px 6px;
+          }
+        }
+
+        /* Very small screens */
+        @media (max-width: 380px) {
+          .docs-header h1 {
+            font-size: 16px;
+          }
+          table {
+            min-width: 400px;
+          }
+          .action-btn-icon {
+            width: 24px;
+            height: 24px;
           }
         }
       `}</style>

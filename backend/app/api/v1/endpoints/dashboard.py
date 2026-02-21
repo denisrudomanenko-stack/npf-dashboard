@@ -8,12 +8,17 @@ from app.database import get_db
 from app.models import Enterprise, RoadmapItem, KPPContract, Risk, Milestone
 from app.models.sales_data import SalesData
 from app.models.dashboard_config import DashboardConfig
+from app.models.user import User
+from app.auth.dependencies import get_current_active_user, require_manager
 
 router = APIRouter()
 
 
 @router.get("/")
-async def get_dashboard_data(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+async def get_dashboard_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+) -> Dict[str, Any]:
     """Get all dashboard data in a single request."""
 
     # KPI Data
@@ -370,7 +375,8 @@ async def create_task(
     start_q: int,
     end_q: int,
     status: str = "planned",
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Create a new timeline task."""
     from app.models.roadmap import Track, RoadmapStatus
@@ -422,7 +428,11 @@ async def create_task(
 
 
 @router.delete("/tasks/{task_id}")
-async def delete_task(task_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Delete a timeline task."""
     from fastapi import HTTPException
     result = await db.execute(select(RoadmapItem).where(RoadmapItem.id == task_id))
@@ -443,7 +453,8 @@ async def update_task(
     start_q: int = None,
     end_q: int = None,
     status: str = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Update a timeline task."""
     from fastapi import HTTPException
@@ -497,7 +508,11 @@ async def update_task(
 
 
 @router.post("/tasks/{task_id}/archive")
-async def archive_task(task_id: int, db: AsyncSession = Depends(get_db)):
+async def archive_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Archive a timeline task (set status to cancelled)."""
     from fastapi import HTTPException
     from app.models.roadmap import RoadmapStatus
@@ -513,7 +528,10 @@ async def archive_task(task_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/tasks/archived")
-async def get_archived_tasks(db: AsyncSession = Depends(get_db)):
+async def get_archived_tasks(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Get archived (cancelled) tasks."""
     from app.models.roadmap import RoadmapStatus, Track
 
@@ -543,7 +561,10 @@ async def get_archived_tasks(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/seed")
-async def seed_dashboard_data(db: AsyncSession = Depends(get_db)):
+async def seed_dashboard_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Seed initial dashboard data (for development)."""
 
     # Check if data already exists

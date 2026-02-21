@@ -6,6 +6,7 @@ from datetime import date
 
 from app.database import get_db
 from app.models.sales_data import SalesData
+from app.models.user import User
 from app.schemas.sales_data import (
     SalesDataCreate,
     SalesDataUpdate,
@@ -14,6 +15,7 @@ from app.schemas.sales_data import (
     SalesDataBulkImport,
     TrackType,
 )
+from app.auth.dependencies import get_current_active_user, require_manager
 
 router = APIRouter()
 
@@ -26,7 +28,8 @@ async def list_sales_data(
     period_type: Optional[str] = None,
     limit: int = Query(default=100, le=500),
     offset: int = 0,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Получить список данных продаж с фильтрацией."""
     query = select(SalesData)
@@ -51,7 +54,10 @@ async def list_sales_data(
 
 
 @router.get("/latest", response_model=dict)
-async def get_latest_data(db: AsyncSession = Depends(get_db)):
+async def get_latest_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Получить последние данные продаж по каждому треку."""
     result = {}
 
@@ -74,7 +80,8 @@ async def get_aggregated_data(
     track: Optional[str] = None,
     group_by: str = Query(default="month", enum=["week", "month", "quarter"]),
     year: int = 2026,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Получить агрегированные данные по периодам."""
     from sqlalchemy import extract, literal_column
@@ -144,7 +151,11 @@ async def get_aggregated_data(
 
 
 @router.get("/{sales_id}", response_model=SalesDataResponse)
-async def get_sales_data(sales_id: int, db: AsyncSession = Depends(get_db)):
+async def get_sales_data(
+    sales_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Получить данные продаж по ID."""
     result = await db.execute(
         select(SalesData).where(SalesData.id == sales_id)
@@ -158,7 +169,8 @@ async def get_sales_data(sales_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=SalesDataResponse)
 async def create_sales_data(
     data: SalesDataCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Создать новую запись данных продаж."""
     item = SalesData(**data.model_dump())
@@ -171,7 +183,8 @@ async def create_sales_data(
 @router.post("/bulk", response_model=List[SalesDataResponse])
 async def bulk_import_sales_data(
     bulk_data: SalesDataBulkImport,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Массовый импорт данных продаж."""
     items = []
@@ -192,7 +205,8 @@ async def bulk_import_sales_data(
 async def update_sales_data(
     sales_id: int,
     data: SalesDataUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
 ):
     """Обновить данные продаж."""
     result = await db.execute(
@@ -212,7 +226,11 @@ async def update_sales_data(
 
 
 @router.delete("/{sales_id}")
-async def delete_sales_data(sales_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_sales_data(
+    sales_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
     """Удалить данные продаж."""
     result = await db.execute(
         select(SalesData).where(SalesData.id == sales_id)

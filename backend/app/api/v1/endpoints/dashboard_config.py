@@ -6,11 +6,13 @@ import json
 
 from app.database import get_db
 from app.models.dashboard_config import DashboardConfig
+from app.models.user import User
 from app.schemas.dashboard_config import (
     DashboardConfigCreate,
     DashboardConfigUpdate,
     DashboardConfigResponse,
 )
+from app.auth.dependencies import get_current_active_user, require_admin
 
 router = APIRouter()
 
@@ -41,7 +43,8 @@ def config_to_response(config: DashboardConfig) -> DashboardConfigResponse:
 @router.get("/", response_model=List[DashboardConfigResponse])
 async def list_configs(
     category: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Получить список всех конфигураций."""
     query = select(DashboardConfig)
@@ -56,7 +59,11 @@ async def list_configs(
 
 
 @router.get("/{key}", response_model=DashboardConfigResponse)
-async def get_config(key: str, db: AsyncSession = Depends(get_db)):
+async def get_config(
+    key: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Получить конфигурацию по ключу."""
     result = await db.execute(
         select(DashboardConfig).where(DashboardConfig.key == key)
@@ -71,7 +78,8 @@ async def get_config(key: str, db: AsyncSession = Depends(get_db)):
 async def update_config(
     key: str,
     data: DashboardConfigUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
 ):
     """Обновить конфигурацию по ключу."""
     result = await db.execute(
@@ -94,7 +102,8 @@ async def update_config(
 @router.post("/", response_model=DashboardConfigResponse)
 async def create_config(
     data: DashboardConfigCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
 ):
     """Создать новую конфигурацию."""
     # Check if key exists
@@ -117,7 +126,11 @@ async def create_config(
 
 
 @router.delete("/{key}")
-async def delete_config(key: str, db: AsyncSession = Depends(get_db)):
+async def delete_config(
+    key: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
     """Удалить конфигурацию."""
     result = await db.execute(
         select(DashboardConfig).where(DashboardConfig.key == key)
@@ -132,7 +145,10 @@ async def delete_config(key: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/seed")
-async def seed_default_configs(db: AsyncSession = Depends(get_db)):
+async def seed_default_configs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
     """Заполнить конфигурации значениями по умолчанию."""
 
     DEFAULT_CONFIGS = [

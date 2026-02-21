@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
+import secrets
 
 
 class Settings(BaseSettings):
@@ -10,6 +11,16 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./npf.db"
+
+    # JWT Authentication (reads from SECRET_KEY env var or generates random)
+    secret_key: str = secrets.token_urlsafe(32)
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60 * 24  # 24 hours
+
+    @property
+    def jwt_secret_key(self) -> str:
+        """JWT secret key - uses SECRET_KEY from env."""
+        return self.secret_key
 
     # Ollama
     ollama_base_url: str = "http://localhost:11434"

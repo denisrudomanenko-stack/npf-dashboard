@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePermissions } from '../hooks/usePermissions'
 
 // Format number with space separators (Russian locale)
 function formatNumber(value: number): string {
@@ -101,6 +102,7 @@ const milestones: Milestone[] = [
 ]
 
 function Roadmap() {
+  const { canEdit } = usePermissions()
   const [activeTrack, setActiveTrack] = useState<'all' | 'internal' | 'external'>('all')
   const [showAddTask, setShowAddTask] = useState(false)
 
@@ -259,9 +261,11 @@ function Roadmap() {
             Трек 2: Внешние клиенты
           </button>
         </div>
-        <button className="btn-add-task" onClick={() => setShowAddTask(true)}>
-          + Задача
-        </button>
+        {canEdit && (
+          <button className="btn-add-task" onClick={() => setShowAddTask(true)}>
+            + Задача
+          </button>
+        )}
       </section>
 
       {/* Timeline */}

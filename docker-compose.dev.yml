@@ -37,6 +37,10 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:///./db/npf.db
       - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - INIT_ADMIN_USERNAME=${INIT_ADMIN_USERNAME:-}
+      - INIT_ADMIN_EMAIL=${INIT_ADMIN_EMAIL:-}
+      - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
     env_file:
       - .env
     extra_hosts:
