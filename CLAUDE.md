@@ -353,6 +353,13 @@ BACKEND_PORT=8000
 - [x] **Защита всех API-эндпоинтов** (требуется токен)
 - [x] **Страница входа** и управление пользователями
 - [x] **Скрипт создания администратора** (scripts/create_admin.py)
+- [x] **Владение сущностями (created_by_id)**:
+  - Manager может редактировать/удалять только **свои** записи
+  - Admin может редактировать/удалять **все** записи
+  - Старые записи (created_by_id = NULL) — только Admin
+- [x] **Векторизация документов** — только для Admin
+- [x] **Toast-уведомления** при ошибках прав доступа (403)
+- [x] **Tooltips** на кнопках с ограниченным доступом
 
 ### В планах
 
@@ -389,7 +396,9 @@ BACKEND_PORT=8000
 | **Провайдер** | Timeweb Cloud |
 | **IP-адрес** | 217.198.9.249 |
 | **SSH** | `ssh -i ~/.ssh/npf_server root@217.198.9.249` |
-| **Статус** | ⏸️ Остановлен (ожидает авторизации) |
+| **Статус** | ✅ Работает (JWT + RBAC + Ownership) |
+| **Frontend** | http://217.198.9.249 |
+| **Backend** | http://217.198.9.249:8000 |
 
 ### Запуск сервера
 ```bash
@@ -407,36 +416,66 @@ docker compose -f docker-compose.simple.yml down
 
 ---
 
-## Последняя сессия (21 февраля 2026)
+## Последняя сессия (22 февраля 2026)
 
 ### Выполнено
-1. **JWT-авторизация реализована полностью:**
-   - Модель User с ролями (admin, manager, viewer)
-   - JWT-токены (24 часа, bcrypt хеширование)
-   - Защита всех API-эндпоинтов
-   - Страница входа (Login)
-   - Страница управления пользователями (Users, только admin)
-   - Компонент UserMenu в шапке
-   - Скрипт создания администратора
+1. **Владение сущностями (Entity Ownership):**
+   - Добавлено поле `created_by_id` в 5 моделей: Enterprise, Document, RoadmapItem, Milestone, Risk
+   - Manager может редактировать/удалять только свои записи
+   - Admin может редактировать/удалять все записи
+   - Старые записи (created_by_id = NULL) доступны только Admin
 
-2. **Права доступа:**
-   - viewer: только просмотр
-   - manager: просмотр + редактирование
-   - admin: полный доступ + управление пользователями
+2. **Ограничение векторизации:**
+   - Векторизация документов теперь доступна только Admin
 
-3. **Новые файлы:**
-   - `backend/app/models/user.py` — модель User
-   - `backend/app/schemas/user.py` — Pydantic схемы
-   - `backend/app/auth/` — модуль авторизации
-   - `backend/app/api/v1/endpoints/auth.py` — /login, /me
-   - `backend/app/api/v1/endpoints/users.py` — CRUD пользователей
-   - `scripts/create_admin.py` — создание админа
-   - `frontend/src/stores/authStore.ts` — Zustand store
-   - `frontend/src/types/auth.ts` — TypeScript типы
-   - `frontend/src/pages/Login.tsx` — страница входа
-   - `frontend/src/pages/Users.tsx` — управление пользователями
-   - `frontend/src/components/ProtectedRoute.tsx` — защита роутов
-   - `frontend/src/components/UserMenu.tsx` — меню пользователя
+3. **UX улучшения:**
+   - Toast-уведомления при ошибках прав доступа (403)
+   - Tooltips на кнопках с ограниченным доступом
+   - Условный рендеринг кнопок Edit/Delete в зависимости от владения
+
+4. **Права доступа (RBAC):**
+
+   | Действие | Admin | Manager | Viewer |
+   |----------|:-----:|:-------:|:------:|
+   | Просмотр всех данных | ✅ | ✅ | ✅ |
+   | Создание сущностей | ✅ | ✅ | ❌ |
+   | Редактирование **своих** | ✅ | ✅ | ❌ |
+   | Редактирование **чужих** | ✅ | ❌ | ❌ |
+   | Удаление **своих** | ✅ | ✅ | ❌ |
+   | Удаление **чужих** | ✅ | ❌ | ❌ |
+   | Векторизация документов | ✅ | ❌ | ❌ |
+   | Настройки дашборда | ✅ | ❌ | ❌ |
+   | Управление пользователями | ✅ | ❌ | ❌ |
+
+5. **Изменённые файлы (Backend):**
+   - `backend/app/models/enterprise.py` — created_by_id
+   - `backend/app/models/document.py` — created_by_id
+   - `backend/app/models/roadmap.py` — created_by_id
+   - `backend/app/models/milestone.py` — created_by_id
+   - `backend/app/models/risk.py` — created_by_id
+   - `backend/app/auth/dependencies.py` — check_ownership, require_ownership
+   - `backend/app/api/v1/endpoints/enterprises.py` — проверка владения
+   - `backend/app/api/v1/endpoints/documents.py` — проверка владения + require_admin для reindex
+   - `backend/app/api/v1/endpoints/roadmap.py` — проверка владения
+   - `backend/app/api/v1/endpoints/dashboard.py` — проверка владения для tasks
+
+6. **Новые файлы (Frontend):**
+   - `frontend/src/components/Toast.tsx` — компонент уведомлений
+   - `frontend/src/stores/toastStore.ts` — Zustand store для toast
+
+7. **Изменённые файлы (Frontend):**
+   - `frontend/src/hooks/usePermissions.ts` — canVectorize, canEditEntity, userId
+   - `frontend/src/services/api.ts` — перехват 403 с toast
+   - `frontend/src/pages/Enterprises.tsx` — условный рендеринг + tooltips
+   - `frontend/src/pages/Documents.tsx` — canVectorize + условный рендеринг
+   - `frontend/src/pages/Dashboard.tsx` — условный рендеринг для tasks
+   - `frontend/src/App.tsx` — интеграция Toast
+
+8. **Деплой на сервер:**
+   - Бэкап PostgreSQL выполнен
+   - Миграция БД (ALTER TABLE ADD COLUMN created_by_id)
+   - Контейнеры пересобраны
+   - Данные сохранены: 8 предприятий, 9 задач, 7 вех, 7 рисков, 3 пользователя
 
 ### Создание администратора
 
@@ -452,18 +491,12 @@ INIT_ADMIN_EMAIL=admin@npf.ru
 INIT_ADMIN_PASSWORD=your_secure_password
 ```
 
-### Следующие шаги
-1. Запустить backend: `uvicorn app.main:app --reload`
-2. Запустить frontend: `npm run dev`
-3. Войти и проверить работу
-4. Деплой на сервер
-
 ### Текущее состояние
-- **Авторизация:** реализована
-- **Сервер:** готов к запуску
-- **Локально:** требуется создать администратора
-- **Данные:** 34 предприятия, 9 задач, 7 вех, 7 рисков
+- **Сервер:** http://217.198.9.249 (работает)
+- **Авторизация:** JWT + RBAC с владением сущностями
+- **Данные:** 8 предприятий, 9 задач, 7 вех, 7 рисков
+- **Пользователи:** 3 (admin, manager, viewer)
 
 ---
 
-*Последнее обновление: 21 февраля 2026*
+*Последнее обновление: 22 февраля 2026*
