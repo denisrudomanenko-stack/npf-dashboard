@@ -57,7 +57,7 @@ interface Enterprise {
   status: 'prospect' | 'negotiation' | 'pilot' | 'active' | 'inactive'
   category: 'A' | 'B' | 'V' | 'G'
   score: number
-  sales_status: 'contact' | 'presentation' | 'negotiation' | 'contract' | 'launched'
+  sales_status: 'planned' | 'contact' | 'contract' | 'launched'
   inn: string | null
   holding: string | null
   locations: string | null
@@ -137,9 +137,8 @@ const categoryLabels: Record<string, string> = {
 }
 
 const salesStatusLabels: Record<string, string> = {
+  planned: 'В планах',
   contact: 'Первый контакт',
-  presentation: 'Презентация',
-  negotiation: 'Переговоры',
   contract: 'Договор',
   launched: 'Запущено'
 }
@@ -162,7 +161,7 @@ const interactionTypeIcons: Record<string, string> = {
   other: '📌'
 }
 
-const salesStages = ['contact', 'presentation', 'negotiation', 'contract', 'launched']
+const salesStages = ['planned', 'contact', 'contract', 'launched']
 
 // Sortable column item component
 function SortableColumnItem({ column, onToggle, onRename }: {
@@ -1961,7 +1960,6 @@ function Enterprises() {
           font-weight: 500;
         }
         .status-prospect { background: #e0e7ff; color: #4338ca; }
-        .status-negotiation { background: #fef3c7; color: #d97706; }
         .status-pilot { background: #dbeafe; color: #2563eb; }
         .status-active { background: #d1fae5; color: #059669; }
         .status-inactive { background: #f3f4f6; color: #6b7280; }
@@ -1975,13 +1973,21 @@ function Enterprises() {
           background: #f3f4f6;
           color: var(--text);
         }
-        .sales-launched {
-          background: #d1fae5;
-          color: #059669;
+        .sales-planned {
+          background: #f3f4f6;
+          color: #6b7280;
+        }
+        .sales-contact {
+          background: #fef3c7;
+          color: #d97706;
         }
         .sales-contract {
           background: #dbeafe;
           color: #2563eb;
+        }
+        .sales-launched {
+          background: #d1fae5;
+          color: #059669;
         }
 
         .score-badge {

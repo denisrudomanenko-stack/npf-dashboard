@@ -21,9 +21,8 @@ class EnterpriseCategory(str, enum.Enum):
 
 
 class SalesStatus(str, enum.Enum):
-    CONTACT = "contact"           # Первый контакт
-    PRESENTATION = "presentation"  # Презентация
-    NEGOTIATION = "negotiation"    # Переговоры
+    PLANNED = "planned"            # В планах
+    CONTACT = "contact"            # Первый контакт
     CONTRACT = "contract"          # Договор
     LAUNCHED = "launched"          # Запущено
 
@@ -41,7 +40,7 @@ class Enterprise(Base):
     # Pipeline fields
     category = Column(SQLEnum(EnterpriseCategory), default=EnterpriseCategory.V)
     score = Column(Integer, default=0)  # Скоринг-балл
-    sales_status = Column(SQLEnum(SalesStatus), default=SalesStatus.CONTACT)
+    sales_status = Column(SQLEnum(SalesStatus), default=SalesStatus.PLANNED)
 
     inn = Column(String(12))  # ИНН предприятия (10 или 12 цифр)
     holding = Column(String(255))  # Холдинг/группа компаний

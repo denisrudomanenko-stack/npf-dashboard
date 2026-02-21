@@ -137,6 +137,10 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
     zk_dds_count = zk_data.dds_count if zk_data else 0
     zk_dds_collections = zk_data.dds_collections if zk_data else 0
 
+    # Calculate target ZK collections: 36000 руб × dds_count_target / 1_000_000 (в млн руб)
+    zk_dds_count_target = int(targets.get("zk_dds_count_target", 0))
+    zk_dds_collections_target = 36000 * zk_dds_count_target / 1_000_000
+
     # External: Count enterprises from DB
     enterprises_result = await db.execute(
         select(
@@ -207,11 +211,11 @@ async def get_kpi_data(db: AsyncSession) -> Dict[str, Any]:
         "zk": {
             "ddsCount": {
                 "current": zk_dds_count,
-                "target": int(targets.get("zk_dds_count_target", 5000))
+                "target": zk_dds_count_target
             },
             "ddsCollections": {
                 "current": round(zk_dds_collections, 2),
-                "target": targets.get("zk_dds_collections_target", 500.0)
+                "target": round(zk_dds_collections_target, 1)
             }
         }
     }
