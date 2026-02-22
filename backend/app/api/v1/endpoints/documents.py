@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from typing import List, Optional
 from pydantic import BaseModel
 import hashlib
@@ -26,6 +26,13 @@ MAX_FILE_SIZE_MB = 30
 MAX_INDEX_SIZE_MB = 10
 MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024  # 30 MB
 MAX_INDEX_SIZE = MAX_INDEX_SIZE_MB * 1024 * 1024  # 10 MB
+
+# Storage limits
+STORAGE_LIMIT_GB = 3
+STORAGE_LIMIT_BYTES = STORAGE_LIMIT_GB * 1024 * 1024 * 1024  # 3 GB
+
+ARCHIVE_LIMIT_GB = 3
+ARCHIVE_LIMIT_BYTES = ARCHIVE_LIMIT_GB * 1024 * 1024 * 1024  # 3 GB
 
 
 def get_file_hash(content: bytes) -> str:
@@ -80,6 +87,54 @@ async def get_document_stats(
     return document_service.get_stats()
 
 
+@router.get("/storage-stats")
+async def get_storage_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get storage statistics for active documents."""
+    result = await db.execute(
+        select(func.coalesce(func.sum(Document.file_size), 0)).where(
+            Document.status == DocumentStatus.ACTIVE
+        )
+    )
+    total_bytes = result.scalar() or 0
+
+    return {
+        "total_bytes": total_bytes,
+        "total_gb": round(total_bytes / (1024 ** 3), 2),
+        "limit_bytes": STORAGE_LIMIT_BYTES,
+        "limit_gb": STORAGE_LIMIT_GB,
+        "usage_percent": round((total_bytes / STORAGE_LIMIT_BYTES) * 100, 1) if STORAGE_LIMIT_BYTES > 0 else 0,
+        "remaining_bytes": max(0, STORAGE_LIMIT_BYTES - total_bytes),
+        "remaining_gb": round(max(0, STORAGE_LIMIT_BYTES - total_bytes) / (1024 ** 3), 2)
+    }
+
+
+@router.get("/archive-stats")
+async def get_archive_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get storage statistics for archived documents."""
+    result = await db.execute(
+        select(func.coalesce(func.sum(Document.file_size), 0)).where(
+            Document.status == DocumentStatus.ARCHIVED
+        )
+    )
+    total_bytes = result.scalar() or 0
+
+    return {
+        "total_bytes": total_bytes,
+        "total_gb": round(total_bytes / (1024 ** 3), 2),
+        "limit_bytes": ARCHIVE_LIMIT_BYTES,
+        "limit_gb": ARCHIVE_LIMIT_GB,
+        "usage_percent": round((total_bytes / ARCHIVE_LIMIT_BYTES) * 100, 1) if ARCHIVE_LIMIT_BYTES > 0 else 0,
+        "remaining_bytes": max(0, ARCHIVE_LIMIT_BYTES - total_bytes),
+        "remaining_gb": round(max(0, ARCHIVE_LIMIT_BYTES - total_bytes) / (1024 ** 3), 2)
+    }
+
+
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: int,
@@ -120,15 +175,33 @@ async def upload_document(
             detail=f"File too large ({file_size / 1024 / 1024:.1f} MB). Maximum size: {MAX_FILE_SIZE_MB} MB"
         )
 
+    # Check storage limit
+    storage_result = await db.execute(
+        select(func.coalesce(func.sum(Document.file_size), 0)).where(
+            Document.status != DocumentStatus.DELETED
+        )
+    )
+    current_storage = storage_result.scalar() or 0
+
+    if current_storage + file_size > STORAGE_LIMIT_BYTES:
+        used_gb = current_storage / (1024 ** 3)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Недостаточно места в хранилище. Использовано: {used_gb:.2f} ГБ из {STORAGE_LIMIT_GB} ГБ. Освободите место или удалите старые документы."
+        )
+
     # Disable auto-index for large files
     if file_size > MAX_INDEX_SIZE and auto_index:
         auto_index = False
 
     content_hash = get_file_hash(contents)
 
-    # Check for duplicates by hash
+    # Check for duplicates by hash (exclude deleted documents)
     result = await db.execute(
-        select(Document).where(Document.content_hash == content_hash)
+        select(Document).where(
+            Document.content_hash == content_hash,
+            Document.status != DocumentStatus.DELETED
+        )
     )
     existing = result.scalar_one_or_none()
     if existing:
@@ -146,13 +219,20 @@ async def upload_document(
 
     # Create DB record
     doc_title = title or file.filename
+
+    # Parse document type safely
+    try:
+        doc_type_enum = DocumentType(document_type)
+    except ValueError:
+        doc_type_enum = DocumentType.OTHER
+
     doc = Document(
         filename=filename,
         original_filename=file.filename,
         file_path=str(file_path),
         file_type=file_ext[1:],
         file_size=len(contents),
-        document_type=DocumentType(document_type) if document_type in DocumentType.__members__ else DocumentType.OTHER,
+        document_type=doc_type_enum,
         title=doc_title,
         description=description,
         content_hash=content_hash,
@@ -314,10 +394,50 @@ async def archive_document(
     # Check ownership (Admin can archive any, Manager can archive only own)
     require_ownership(doc, current_user)
 
+    # Check archive storage limit
+    archive_result = await db.execute(
+        select(func.coalesce(func.sum(Document.file_size), 0)).where(
+            Document.status == DocumentStatus.ARCHIVED
+        )
+    )
+    current_archive_size = archive_result.scalar() or 0
+    doc_size = doc.file_size or 0
+
+    if current_archive_size + doc_size > ARCHIVE_LIMIT_BYTES:
+        used_gb = current_archive_size / (1024 ** 3)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Недостаточно места в архиве. Использовано: {used_gb:.2f} ГБ из {ARCHIVE_LIMIT_GB} ГБ. Удалите документы из архива."
+        )
+
     doc.status = DocumentStatus.ARCHIVED
     await db.commit()
 
     return {"message": "Document archived"}
+
+
+@router.patch("/{document_id}/restore")
+async def restore_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
+    """Restore document from archive."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.status != DocumentStatus.ARCHIVED:
+        raise HTTPException(status_code=400, detail="Document is not archived")
+
+    # Check ownership (Admin can restore any, Manager can restore only own)
+    require_ownership(doc, current_user)
+
+    doc.status = DocumentStatus.ACTIVE
+    await db.commit()
+
+    return {"message": "Document restored"}
 
 
 @router.delete("/{document_id}")
@@ -533,6 +653,53 @@ async def change_document_category(
         "document_id": doc.id,
         "old_category": old_category,
         "new_category": new_doc_type.value
+    }
+
+
+class DocumentUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    document_type: Optional[str] = None
+
+
+@router.patch("/{document_id}")
+async def update_document(
+    document_id: int,
+    update_data: DocumentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager)
+):
+    """Update document attributes (title, description, category)."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Check ownership
+    require_ownership(doc, current_user)
+
+    # Update fields
+    if update_data.title is not None:
+        doc.title = update_data.title
+
+    if update_data.description is not None:
+        doc.description = update_data.description
+
+    if update_data.document_type is not None:
+        try:
+            doc.document_type = DocumentType(update_data.document_type)
+        except ValueError:
+            doc.document_type = DocumentType.OTHER
+
+    await db.commit()
+    await db.refresh(doc)
+
+    return {
+        "message": "Document updated",
+        "document_id": doc.id,
+        "title": doc.title,
+        "description": doc.description,
+        "document_type": doc.document_type.value if doc.document_type else "other"
     }
 
 

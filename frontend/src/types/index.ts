@@ -62,3 +62,20 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
 }
+
+export interface StorageStats {
+  total_bytes: number
+  total_gb: number
+  limit_bytes: number
+  limit_gb: number
+  usage_percent: number
+  remaining_bytes: number
+  remaining_gb: number
+}
+
+export interface AIStatus {
+  ai_available: boolean
+  can_vectorize: boolean
+  can_suggest_name: boolean
+  can_ocr: boolean
+}

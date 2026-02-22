@@ -17,6 +17,9 @@ class DocumentType(str, enum.Enum):
     PRESENTATION = "presentation"  # Презентации
     CONTRACT_TEMPLATE = "contract_template"  # Шаблоны договоров
     ANALYTICS = "analytics"  # Аналитика
+    FAQ = "faq"  # FAQ
+    METHODOLOGY = "methodology"  # Методика
+    INSTRUCTION = "instruction"  # Инструкция
     OTHER = "other"
 
 

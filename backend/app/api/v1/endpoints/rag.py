@@ -10,6 +10,7 @@ from app.services.rag_service import rag_service
 from app.services.document_service import document_service
 from app.database import get_db
 from app.models.llm_config import LLMConfig
+from app.config import settings
 
 router = APIRouter()
 
@@ -91,6 +92,22 @@ async def get_rag_stats():
     """Get RAG system statistics."""
     stats = await rag_service.get_stats()
     return stats
+
+
+@router.get("/ai-status")
+async def get_ai_status():
+    """Get AI services availability status."""
+    from app.services.ollama_service import ollama_service
+
+    ollama_available = await ollama_service.is_available()
+    anthropic_configured = bool(settings.anthropic_api_key)
+
+    return {
+        "ai_available": ollama_available or anthropic_configured,
+        "can_vectorize": ollama_available,  # Requires embeddings from Ollama
+        "can_suggest_name": ollama_available or anthropic_configured,
+        "can_ocr": anthropic_configured  # Requires Claude Vision
+    }
 
 
 @router.post("/test-embedding")
