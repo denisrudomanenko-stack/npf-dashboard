@@ -233,11 +233,13 @@ export default function Users() {
             {users.map((user) => (
               <tr key={user.id}>
                 <td>
-                  <div className="user-info">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div className="user-avatar">
                       {user.username.charAt(0).toUpperCase()}
                     </div>
-                    <span className="user-name">{user.username}</span>
+                    <span style={{ fontWeight: 500, color: '#1f2937', background: 'transparent' }}>
+                      {user.username}
+                    </span>
                   </div>
                 </td>
                 <td className="user-email">{user.email}</td>

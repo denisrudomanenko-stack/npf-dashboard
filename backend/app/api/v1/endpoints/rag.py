@@ -98,15 +98,25 @@ async def get_rag_stats():
 async def get_ai_status():
     """Get AI services availability status."""
     from app.services.ollama_service import ollama_service
+    from app.services.timeweb_ai_service import timeweb_ai_service
 
     ollama_available = await ollama_service.is_available()
+    timeweb_available = await timeweb_ai_service.is_available()
     anthropic_configured = bool(settings.anthropic_api_key)
 
+    any_llm_available = ollama_available or timeweb_available or anthropic_configured
+
     return {
-        "ai_available": ollama_available or anthropic_configured,
+        "ai_available": any_llm_available,
         "can_vectorize": ollama_available,  # Requires embeddings from Ollama
-        "can_suggest_name": ollama_available or anthropic_configured,
-        "can_ocr": anthropic_configured  # Requires Claude Vision
+        "can_suggest_name": any_llm_available,
+        "can_ocr": anthropic_configured,  # Requires Claude Vision
+        "can_chat": any_llm_available,
+        "providers": {
+            "timeweb": timeweb_available,
+            "ollama": ollama_available,
+            "anthropic": anthropic_configured
+        }
     }
 
 
@@ -135,6 +145,7 @@ async def test_embedding(text: str = Form(...)):
 async def get_llm_config(db: AsyncSession = Depends(get_db)):
     """Get LLM configuration for all model categories (persistent)."""
     from app.services.ollama_service import ollama_service
+    from app.services.timeweb_ai_service import timeweb_ai_service
     from app.config import settings
     import httpx
 
@@ -154,18 +165,24 @@ async def get_llm_config(db: AsyncSession = Depends(get_db)):
     # Check Anthropic API key
     anthropic_configured = bool(settings.anthropic_api_key)
 
+    # Check Timeweb AI
+    timeweb_available = await timeweb_ai_service.is_available()
+    timeweb_model = timeweb_ai_service.model if timeweb_available else None
+
     # Load configs from database
     result = await db.execute(select(LLMConfig).where(LLMConfig.is_active == True))
     db_configs = {c.function: {"provider": c.provider, "model": c.model} for c in result.scalars().all()}
 
-    # Merge with defaults
-    chat_config = db_configs.get("chat", DEFAULT_LLM_CONFIGS["chat"])
+    # Merge with defaults (prefer timeweb if available)
+    default_chat = {"provider": "timeweb", "model": timeweb_model} if timeweb_available else DEFAULT_LLM_CONFIGS["chat"]
+    chat_config = db_configs.get("chat", default_chat)
     vision_config = db_configs.get("vision", DEFAULT_LLM_CONFIGS["vision"])
     embeddings_config = db_configs.get("embeddings", DEFAULT_LLM_CONFIGS["embeddings"])
 
     return {
         "ollama_available": ollama_available,
         "anthropic_configured": anthropic_configured,
+        "timeweb_available": timeweb_available,
         "chat": chat_config,
         "vision": vision_config,
         "embeddings": embeddings_config,
@@ -175,7 +192,8 @@ async def get_llm_config(db: AsyncSession = Depends(get_db)):
             "claude-opus-4-20250514",
             "claude-3-5-sonnet-20241022",
             "claude-3-haiku-20240307"
-        ]
+        ],
+        "timeweb_models": [timeweb_model] if timeweb_model else []
     }
 
 

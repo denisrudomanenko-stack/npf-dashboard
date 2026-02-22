@@ -31,8 +31,13 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = None
     anthropic_chat_model: str = "claude-sonnet-4-20250514"
 
+    # Timeweb AI (cloud AI provider)
+    timeweb_ai_token: Optional[str] = None
+    timeweb_agent_id: Optional[str] = None
+    timeweb_ai_model: str = "deepseek-reasoner"
+
     # LLM Provider settings (runtime configurable)
-    chat_provider: str = "ollama"  # ollama or anthropic
+    chat_provider: str = "ollama"  # ollama, anthropic, or timeweb
     vision_model: str = "claude-sonnet-4-20250514"
 
     # ChromaDB

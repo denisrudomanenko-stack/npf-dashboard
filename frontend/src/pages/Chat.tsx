@@ -20,11 +20,13 @@ interface Conversation {
 interface LLMConfig {
   ollama_available: boolean
   anthropic_configured: boolean
+  timeweb_available: boolean
   chat: { provider: string; model: string }
   vision: { provider: string; model: string }
   embeddings: { provider: string; model: string }
   available_ollama_models: string[]
   anthropic_models: string[]
+  timeweb_models: string[]
 }
 
 function Chat() {
@@ -196,6 +198,9 @@ function Chat() {
 
   const getModelsForProvider = (provider: string, category: string) => {
     if (!llmConfig) return []
+    if (provider === 'timeweb') {
+      return llmConfig.timeweb_models
+    }
     if (provider === 'ollama') {
       return category === 'embeddings'
         ? llmConfig.available_ollama_models.filter(m => m.includes('embed'))
@@ -274,13 +279,15 @@ function Chat() {
               <div className="mc-header">
                 <span className="mc-icon">💬</span>
                 <span className="mc-label">Чат</span>
+                <span className="mc-provider">{llmConfig.chat.provider}</span>
               </div>
-              <div className="mc-model">{llmConfig.chat.model}</div>
+              <div className="mc-model">{llmConfig.chat.model.replace('deepseek-', '').replace('claude-', '').substring(0, 15)}</div>
             </div>
             <div className="model-card" onClick={() => openConfigModal('vision')}>
               <div className="mc-header">
                 <span className="mc-icon">👁</span>
-                <span className="mc-label">Vision</span>
+                <span className="mc-label">OCR</span>
+                <span className="mc-provider">{llmConfig.vision.provider}</span>
               </div>
               <div className="mc-model">{llmConfig.vision.model.replace('claude-', '').substring(0, 12)}</div>
             </div>
@@ -288,15 +295,19 @@ function Chat() {
               <div className="mc-header">
                 <span className="mc-icon">🔍</span>
                 <span className="mc-label">Embed</span>
+                <span className="mc-provider">{llmConfig.embeddings.provider}</span>
               </div>
               <div className="mc-model">{llmConfig.embeddings.model}</div>
             </div>
             <div className="status-row">
-              <span className={`status-chip ${llmConfig.ollama_available ? 'online' : 'offline'}`}>
-                Ollama {llmConfig.ollama_available ? '●' : '○'}
+              <span className={`status-chip ${llmConfig.timeweb_available ? 'online' : 'offline'}`} title="Timeweb Cloud AI (DeepSeek)">
+                TW {llmConfig.timeweb_available ? '●' : '○'}
               </span>
-              <span className={`status-chip ${llmConfig.anthropic_configured ? 'online' : 'offline'}`}>
-                Claude {llmConfig.anthropic_configured ? '●' : '○'}
+              <span className={`status-chip ${llmConfig.ollama_available ? 'online' : 'offline'}`} title="Ollama (локальный)">
+                OL {llmConfig.ollama_available ? '●' : '○'}
+              </span>
+              <span className={`status-chip ${llmConfig.anthropic_configured ? 'online' : 'offline'}`} title="Anthropic Claude">
+                CL {llmConfig.anthropic_configured ? '●' : '○'}
               </span>
             </div>
           </div>
@@ -388,25 +399,43 @@ function Chat() {
                 <div className="provider-buttons">
                   {configModal === 'chat' ? (
                     <>
-                      <button
-                        className={`provider-btn ${selectedProvider === 'ollama' ? 'active' : ''}`}
-                        onClick={() => {
-                          setSelectedProvider('ollama')
-                          const models = llmConfig.available_ollama_models.filter(m => !m.includes('embed'))
-                          if (models.length > 0) setSelectedModel(models[0])
-                        }}
-                      >
-                        🖥 Ollama
-                      </button>
-                      <button
-                        className={`provider-btn ${selectedProvider === 'anthropic' ? 'active' : ''}`}
-                        onClick={() => {
-                          setSelectedProvider('anthropic')
-                          setSelectedModel(llmConfig.anthropic_models[0])
-                        }}
-                      >
-                        ☁️ Claude
-                      </button>
+                      {llmConfig.timeweb_available && (
+                        <button
+                          className={`provider-btn ${selectedProvider === 'timeweb' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedProvider('timeweb')
+                            if (llmConfig.timeweb_models.length > 0) setSelectedModel(llmConfig.timeweb_models[0])
+                          }}
+                          title="Timeweb Cloud AI"
+                        >
+                          🚀 Timeweb
+                        </button>
+                      )}
+                      {llmConfig.ollama_available && (
+                        <button
+                          className={`provider-btn ${selectedProvider === 'ollama' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedProvider('ollama')
+                            const models = llmConfig.available_ollama_models.filter(m => !m.includes('embed'))
+                            if (models.length > 0) setSelectedModel(models[0])
+                          }}
+                          title="Локальный Ollama"
+                        >
+                          🖥 Ollama
+                        </button>
+                      )}
+                      {llmConfig.anthropic_configured && (
+                        <button
+                          className={`provider-btn ${selectedProvider === 'anthropic' ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedProvider('anthropic')
+                            setSelectedModel(llmConfig.anthropic_models[0])
+                          }}
+                          title="Anthropic Claude"
+                        >
+                          ☁️ Claude
+                        </button>
+                      )}
                     </>
                   ) : (
                     <button className="provider-btn active" disabled>
@@ -579,13 +608,22 @@ function Chat() {
           display: flex;
           align-items: center;
           gap: 6px;
-          margin-bottom: 2px;
+          margin-bottom: 4px;
         }
         .mc-icon { font-size: 12px; }
         .mc-label {
           font-size: 10px;
           text-transform: uppercase;
           color: #888;
+          flex: 1;
+        }
+        .mc-provider {
+          font-size: 9px;
+          padding: 2px 5px;
+          border-radius: 3px;
+          background: rgba(99, 102, 241, 0.2);
+          color: #a5b4fc;
+          text-transform: uppercase;
         }
         .mc-model {
           font-size: 11px;
@@ -596,17 +634,26 @@ function Chat() {
         }
         .status-row {
           display: flex;
-          gap: 6px;
-          margin-top: 8px;
+          gap: 4px;
+          margin-top: 10px;
+          justify-content: center;
         }
         .status-chip {
           font-size: 9px;
-          padding: 3px 6px;
+          padding: 4px 8px;
           border-radius: 4px;
           background: rgba(255,255,255,0.05);
+          cursor: help;
+          font-weight: 500;
         }
-        .status-chip.online { color: #4ade80; }
-        .status-chip.offline { color: #f87171; }
+        .status-chip.online {
+          color: #4ade80;
+          background: rgba(74, 222, 128, 0.1);
+        }
+        .status-chip.offline {
+          color: #f87171;
+          background: rgba(248, 113, 113, 0.1);
+        }
 
         /* Main Chat */
         .chat-main {

@@ -5,6 +5,7 @@ import logging
 
 from app.services.document_service import document_service
 from app.services.ollama_service import ollama_service
+from app.services.timeweb_ai_service import timeweb_ai_service
 from app.schemas.rag import RAGResponse, RAGSource, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -42,15 +43,22 @@ class RAGService:
         """Determine which LLM provider to use based on config."""
         from app.config import settings
 
-        # If explicitly set to anthropic, use it (for production with embeddings-only Ollama)
+        # Check explicit provider setting
+        if settings.chat_provider == "timeweb" and await timeweb_ai_service.is_available():
+            return "timeweb"
         if settings.chat_provider == "anthropic" and self.anthropic_client:
             return "anthropic"
-        # Otherwise check Ollama availability for chat
-        if await ollama_service.is_available() and settings.chat_provider == "ollama":
+        if settings.chat_provider == "ollama" and await ollama_service.is_available():
             return "ollama"
-        # Fallback to anthropic if available
-        elif self.anthropic_client:
+
+        # Fallback chain: timeweb -> anthropic -> ollama
+        if await timeweb_ai_service.is_available():
+            return "timeweb"
+        if self.anthropic_client:
             return "anthropic"
+        if await ollama_service.is_available():
+            return "ollama"
+
         return "none"
 
     async def query(
@@ -97,7 +105,9 @@ class RAGService:
 
         provider = await self._get_provider()
 
-        if provider == "ollama":
+        if provider == "timeweb":
+            answer = await timeweb_ai_service.generate(prompt, system=NPF_SYSTEM_PROMPT)
+        elif provider == "ollama":
             answer = await ollama_service.generate(prompt, system=NPF_SYSTEM_PROMPT)
         elif provider == "anthropic":
             message = self.anthropic_client.messages.create(
@@ -138,7 +148,9 @@ class RAGService:
         api_messages = [{"role": m.role, "content": m.content} for m in messages]
 
         # Use configured provider
-        if chat_provider == "anthropic" and self.anthropic_client:
+        if chat_provider == "timeweb" and await timeweb_ai_service.is_available():
+            response = await timeweb_ai_service.chat(api_messages, system=system_prompt)
+        elif chat_provider == "anthropic" and self.anthropic_client:
             message = self.anthropic_client.messages.create(
                 model=chat_model,
                 max_tokens=2048,
@@ -146,8 +158,11 @@ class RAGService:
                 messages=api_messages
             )
             response = message.content[0].text
-        elif await ollama_service.is_available():
+        elif chat_provider == "ollama" and await ollama_service.is_available():
             response = await ollama_service.chat(api_messages, system=system_prompt)
+        # Fallback chain
+        elif await timeweb_ai_service.is_available():
+            response = await timeweb_ai_service.chat(api_messages, system=system_prompt)
         elif self.anthropic_client:
             message = self.anthropic_client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -156,8 +171,10 @@ class RAGService:
                 messages=api_messages
             )
             response = message.content[0].text
+        elif await ollama_service.is_available():
+            response = await ollama_service.chat(api_messages, system=system_prompt)
         else:
-            response = "LLM провайдер недоступен. Пожалуйста, запустите Ollama или настройте ANTHROPIC_API_KEY."
+            response = "LLM провайдер недоступен. Настройте Timeweb AI, Anthropic или Ollama."
 
         return {"role": "assistant", "content": response}
 
@@ -178,7 +195,10 @@ class RAGService:
 
         provider = await self._get_provider()
 
-        if provider == "ollama":
+        if provider == "timeweb":
+            async for chunk in timeweb_ai_service.chat_stream(api_messages, system=system_prompt):
+                yield {"content": chunk}
+        elif provider == "ollama":
             async for chunk in ollama_service.chat_stream(api_messages, system=system_prompt):
                 yield {"content": chunk}
         elif provider == "anthropic":
@@ -201,6 +221,7 @@ class RAGService:
         return {
             **doc_stats,
             "llm_provider": provider,
+            "timeweb_available": await timeweb_ai_service.is_available(),
             "ollama_available": await ollama_service.is_available(),
             "anthropic_configured": self.anthropic_client is not None
         }
