@@ -75,14 +75,14 @@ ollama pull nomic-embed-text # Модель для эмбеддингов
 - **Python 3.11** + FastAPI
 - **SQLAlchemy 2.0** (async ORM)
 - **ChromaDB** (vector store)
-- **Ollama** (local LLM) / **Anthropic** (Claude API)
+- **Timeweb AI** (DeepSeek Reasoner) / **Ollama** / **Anthropic** (Claude API)
 - **Pydantic** (validation)
 
 ### Infrastructure
 - **Docker** + docker-compose (3 конфигурации: dev, prod, server)
 - **SQLite** (dev) / **PostgreSQL** (prod)
-- **Nginx** (static serving)
-- **Ollama** (embeddings: nomic-embed-text) + **Claude API** (LLM responses)
+- **Nginx** (static serving, client_max_body_size: 50MB)
+- **LLM провайдеры:** Timeweb AI (облако) + Ollama (локально) + Claude API
 
 ---
 
@@ -103,7 +103,7 @@ NPF-project/
 │   │   ├── api/v1/endpoints/  # REST API routers
 │   │   ├── models/         # SQLAlchemy ORM (8 моделей)
 │   │   ├── schemas/        # Pydantic schemas
-│   │   ├── services/       # RAG, Document, Ollama services
+│   │   ├── services/       # RAG, Document, Ollama, Timeweb AI services
 │   │   └── main.py         # FastAPI app
 │   ├── data/
 │   │   ├── chromadb/       # Vector DB
@@ -182,16 +182,25 @@ NPF-project/
 
 ### Documents (RAG)
 - Загрузка файлов (PDF, DOCX, XLSX, CSV, TXT) до 30 МБ
-- Ручная векторизация документов (до 10 МБ)
-- Inline-редактирование названия и категории
+- **Лимит хранилища:** 3 ГБ для активных + 3 ГБ для архива
+- **Шкала заполненности** с цветовой индикацией (зелёный/оранжевый/красный)
+- **Архив документов** с возможностью восстановления
+- Карточка документа с редактированием атрибутов
+- Ручная векторизация документов (только Admin)
 - OCR через Claude Vision
 - Векторный поиск в ChromaDB
+- **Модальные окна** вместо alert() для ошибок
 
 ### AI Chat
 - Multi-turn разговоры
 - RAG-режим (ответы из базы знаний)
 - Streaming responses (SSE)
-- Конфигурируемые LLM модели
+- **3 LLM провайдера:** Timeweb AI, Ollama, Anthropic
+- **Настройки LLM** в боковой панели:
+  - Чат: выбор провайдера и модели
+  - OCR: Claude Vision
+  - Embeddings: Ollama nomic-embed-text
+- **Индикаторы доступности** провайдеров (TW/OL/CL)
 
 ---
 
@@ -257,15 +266,18 @@ DELETE /api/v1/users/{id}   # Удалить пользователя
 | Файл | Назначение |
 |------|------------|
 | `backend/app/main.py` | FastAPI entrypoint |
-| `backend/app/services/rag_service.py` | RAG + LLM логика |
+| `backend/app/services/rag_service.py` | RAG + LLM логика (3 провайдера) |
+| `backend/app/services/timeweb_ai_service.py` | Timeweb Cloud AI клиент |
+| `backend/app/services/ollama_service.py` | Ollama клиент (эмбеддинги + чат) |
 | `backend/app/services/document_service.py` | Индексация документов |
-| `backend/app/api/v1/endpoints/dashboard.py` | API дашборда с агрегацией KPI |
-| `backend/app/api/v1/endpoints/dashboard_config.py` | API настроек дашборда |
-| `backend/app/api/v1/endpoints/sales_data.py` | API данных продаж |
+| `backend/app/api/v1/endpoints/documents.py` | API документов (хранилище, архив) |
+| `backend/app/api/v1/endpoints/rag.py` | API чата, LLM-конфигурации |
+| `frontend/src/pages/Chat.tsx` | AI-ассистент с настройками LLM |
+| `frontend/src/pages/Documents.tsx` | Библиотека документов |
+| `frontend/src/components/StorageBar.tsx` | Шкала заполненности хранилища |
+| `frontend/src/components/ErrorModal.tsx` | Модальное окно ошибок |
 | `frontend/src/pages/Dashboard.tsx` | Главный дашборд с 10 KPI карточками |
-| `frontend/src/components/DashboardSettingsModal.tsx` | Модал настроек дашборда |
 | `frontend/src/services/api.ts` | HTTP клиент |
-| `frontend/src/pages/Enterprises.tsx` | CRM предприятий |
 
 ---
 
@@ -301,12 +313,18 @@ DATABASE_URL=sqlite+aiosqlite:///./npf.db
 # Vector Store
 CHROMA_PERSIST_DIRECTORY=./chroma_db
 
-# LLM
+# LLM Providers
 OLLAMA_BASE_URL=http://localhost:11434
-ANTHROPIC_API_KEY=your-key
+ANTHROPIC_API_KEY=your-anthropic-key
+
+# Timeweb AI (Cloud)
+TIMEWEB_AI_TOKEN=your-timeweb-jwt-token
+TIMEWEB_AGENT_ID=your-agent-uuid
+CHAT_PROVIDER=timeweb  # timeweb, ollama, or anthropic
 
 # Server
 BACKEND_PORT=8000
+SECRET_KEY=your-jwt-secret
 ```
 
 ---
@@ -360,15 +378,25 @@ BACKEND_PORT=8000
 - [x] **Векторизация документов** — только для Admin
 - [x] **Toast-уведомления** при ошибках прав доступа (403)
 - [x] **Tooltips** на кнопках с ограниченным доступом
+- [x] **Timeweb AI интеграция** (DeepSeek Reasoner через OpenAI-совместимый API)
+- [x] **Лимиты хранилища** (3 ГБ активные + 3 ГБ архив)
+- [x] **Архив документов** с восстановлением
+- [x] **Модальные окна ошибок** вместо alert()
+- [x] **Карточка документа** с редактированием
+- [x] **Настройки LLM** в AI-ассистенте (выбор провайдера/модели)
+- [x] **Индикаторы провайдеров** (TW/OL/CL)
 
 ### В планах
 
-#### Приоритет 1: AI-функции
-- [ ] Интеграция AI-ассистента на сервере
-- [ ] ChromaDB для RAG (векторный поиск)
+#### Приоритет 1: RAG на сервере
+- [ ] ChromaDB для векторного поиска
 - [ ] Ollama для эмбеддингов (nomic-embed-text)
-- [ ] Claude API для генерации ответов
 - [ ] Интеллектуальный импорт Excel с LLM
+
+#### Приоритет 2: HTTPS
+- [ ] Домен 24pensi.ru (в процессе регистрации)
+- [ ] Let's Encrypt SSL-сертификат
+- [ ] Certbot установлен, готов к настройке
 
 #### Приоритет 3: Дополнительные функции
 - [ ] Email уведомления
@@ -419,70 +447,81 @@ docker compose -f docker-compose.simple.yml down
 ## Последняя сессия (22 февраля 2026)
 
 ### Выполнено
-1. **Владение сущностями (Entity Ownership):**
-   - Добавлено поле `created_by_id` в 5 моделей: Enterprise, Document, RoadmapItem, Milestone, Risk
-   - Manager может редактировать/удалять только свои записи
-   - Admin может редактировать/удалять все записи
-   - Старые записи (created_by_id = NULL) доступны только Admin
 
-2. **Ограничение векторизации:**
-   - Векторизация документов теперь доступна только Admin
+#### 1. Timeweb AI интеграция
+- Создан `timeweb_ai_service.py` — OpenAI-совместимый клиент
+- Модель: **DeepSeek Reasoner** (deepseek-reasoner)
+- Обновлён `rag_service.py` — поддержка 3 провайдеров (timeweb → anthropic → ollama)
+- Добавлены переменные: `TIMEWEB_AI_TOKEN`, `TIMEWEB_AGENT_ID`, `CHAT_PROVIDER`
 
-3. **UX улучшения:**
-   - Toast-уведомления при ошибках прав доступа (403)
-   - Tooltips на кнопках с ограниченным доступом
-   - Условный рендеринг кнопок Edit/Delete в зависимости от владения
+#### 2. Улучшения раздела "Документы"
+- **Лимит хранилища:** 3 ГБ для активных документов
+- **Архив:** отдельный лимит 3 ГБ, модальное окно, восстановление/удаление
+- **Шкала заполненности:** цветовая индикация (<80% зелёный, 80-95% оранжевый, >95% красный)
+- **Карточка документа:** просмотр и редактирование атрибутов
+- **Модальные окна:** ErrorModal вместо alert()
+- **Порядок кнопок:** Карточка → Просмотр → Скачать → Архив → Удалить
+- **Blob-загрузка:** авторизованный просмотр/скачивание файлов
 
-4. **Права доступа (RBAC):**
+#### 3. Настройки LLM в AI-ассистенте
+- 3 карточки моделей: Чат, OCR, Embed
+- Показ провайдера в каждой карточке
+- Индикаторы доступности: TW (Timeweb), OL (Ollama), CL (Claude)
+- Выбор провайдера и модели в модальном окне
 
-   | Действие | Admin | Manager | Viewer |
-   |----------|:-----:|:-------:|:------:|
-   | Просмотр всех данных | ✅ | ✅ | ✅ |
-   | Создание сущностей | ✅ | ✅ | ❌ |
-   | Редактирование **своих** | ✅ | ✅ | ❌ |
-   | Редактирование **чужих** | ✅ | ❌ | ❌ |
-   | Удаление **своих** | ✅ | ✅ | ❌ |
-   | Удаление **чужих** | ✅ | ❌ | ❌ |
-   | Векторизация документов | ✅ | ❌ | ❌ |
-   | Настройки дашборда | ✅ | ❌ | ❌ |
-   | Управление пользователями | ✅ | ❌ | ❌ |
+#### 4. Подготовка HTTPS
+- Домен `24pensi.ru` (заявка отправлена)
+- Certbot установлен на сервере
+- Nginx настроен: `client_max_body_size 50M`
 
-5. **Изменённые файлы (Backend):**
-   - `backend/app/models/enterprise.py` — created_by_id
-   - `backend/app/models/document.py` — created_by_id
-   - `backend/app/models/roadmap.py` — created_by_id
-   - `backend/app/models/milestone.py` — created_by_id
-   - `backend/app/models/risk.py` — created_by_id
-   - `backend/app/auth/dependencies.py` — check_ownership, require_ownership
-   - `backend/app/api/v1/endpoints/enterprises.py` — проверка владения
-   - `backend/app/api/v1/endpoints/documents.py` — проверка владения + require_admin для reindex
-   - `backend/app/api/v1/endpoints/roadmap.py` — проверка владения
-   - `backend/app/api/v1/endpoints/dashboard.py` — проверка владения для tasks
+### Новые файлы
+| Файл | Описание |
+|------|----------|
+| `backend/app/services/timeweb_ai_service.py` | Клиент Timeweb Cloud AI |
+| `frontend/src/components/StorageBar.tsx` | Шкала заполненности хранилища |
+| `frontend/src/components/ErrorModal.tsx` | Модальное окно ошибок |
 
-6. **Новые файлы (Frontend):**
-   - `frontend/src/components/Toast.tsx` — компонент уведомлений
-   - `frontend/src/stores/toastStore.ts` — Zustand store для toast
+### Изменённые файлы
+| Backend | Frontend |
+|---------|----------|
+| `app/config.py` | `pages/Chat.tsx` |
+| `app/services/rag_service.py` | `pages/Documents.tsx` |
+| `app/api/v1/endpoints/rag.py` | `pages/Users.tsx` |
+| `app/api/v1/endpoints/documents.py` | `types/index.ts` |
+| `app/models/document.py` | |
 
-7. **Изменённые файлы (Frontend):**
-   - `frontend/src/hooks/usePermissions.ts` — canVectorize, canEditEntity, userId
-   - `frontend/src/services/api.ts` — перехват 403 с toast
-   - `frontend/src/pages/Enterprises.tsx` — условный рендеринг + tooltips
-   - `frontend/src/pages/Documents.tsx` — canVectorize + условный рендеринг
-   - `frontend/src/pages/Dashboard.tsx` — условный рендеринг для tasks
-   - `frontend/src/App.tsx` — интеграция Toast
+### LLM провайдеры
 
-8. **Деплой на сервер:**
-   - Бэкап PostgreSQL выполнен
-   - Миграция БД (ALTER TABLE ADD COLUMN created_by_id)
-   - Контейнеры пересобраны
-   - Данные сохранены: 8 предприятий, 9 задач, 7 вех, 7 рисков, 3 пользователя
+| Провайдер | Модель | Функция | Доступность |
+|-----------|--------|---------|-------------|
+| **Timeweb** | deepseek-reasoner | Чат | Сервер ✅ |
+| **Ollama** | qwen2.5:7b | Чат (локальный) | Dev ✅ |
+| **Ollama** | nomic-embed-text | Эмбеддинги | Dev ✅ |
+| **Anthropic** | claude-sonnet | OCR, резервный чат | Настроен ✅ |
+
+### Права доступа (RBAC)
+
+| Действие | Admin | Manager | Viewer |
+|----------|:-----:|:-------:|:------:|
+| Просмотр всех данных | ✅ | ✅ | ✅ |
+| Создание сущностей | ✅ | ✅ | ❌ |
+| Редактирование **своих** | ✅ | ✅ | ❌ |
+| Редактирование **чужих** | ✅ | ❌ | ❌ |
+| Удаление **своих** | ✅ | ✅ | ❌ |
+| Удаление **чужих** | ✅ | ❌ | ❌ |
+| Векторизация документов | ✅ | ❌ | ❌ |
+| Настройки дашборда | ✅ | ❌ | ❌ |
+| Управление пользователями | ✅ | ❌ | ❌ |
+
+### Текущее состояние
+- **Сервер:** http://217.198.9.249 (работает)
+- **AI-чат:** Timeweb AI (DeepSeek Reasoner)
+- **Авторизация:** JWT + RBAC + Entity Ownership
+- **Данные:** 8 предприятий, 9 задач, 7 вех, 7 рисков
+- **Пользователи:** 3 (admin, manager, viewer)
+- **HTTPS:** в процессе (ожидание домена)
 
 ### Создание администратора
-
-**Локально:**
-```bash
-cd backend && python3 ../scripts/create_admin.py --username admin --email admin@npf.ru --password secret123
-```
 
 **Docker:** Добавьте в `.env.server`:
 ```
@@ -490,12 +529,6 @@ INIT_ADMIN_USERNAME=admin
 INIT_ADMIN_EMAIL=admin@npf.ru
 INIT_ADMIN_PASSWORD=your_secure_password
 ```
-
-### Текущее состояние
-- **Сервер:** http://217.198.9.249 (работает)
-- **Авторизация:** JWT + RBAC с владением сущностями
-- **Данные:** 8 предприятий, 9 задач, 7 вех, 7 рисков
-- **Пользователи:** 3 (admin, manager, viewer)
 
 ---
 
