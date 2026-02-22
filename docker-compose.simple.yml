@@ -34,9 +34,12 @@ services:
       - INIT_ADMIN_USERNAME=${INIT_ADMIN_USERNAME:-}
       - INIT_ADMIN_EMAIL=${INIT_ADMIN_EMAIL:-}
       - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
-      # AI disabled
-      - OLLAMA_BASE_URL=
-      - ANTHROPIC_API_KEY=
+      # AI Providers
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - TIMEWEB_AI_TOKEN=${TIMEWEB_AI_TOKEN:-}
+      - TIMEWEB_AGENT_ID=${TIMEWEB_AGENT_ID:-}
+      - CHAT_PROVIDER=${CHAT_PROVIDER:-timeweb}
     depends_on:
       postgres:
         condition: service_healthy
