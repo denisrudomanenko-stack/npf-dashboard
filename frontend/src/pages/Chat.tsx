@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { api } from '../services/api'
+import { useAuthStore } from '../stores/authStore'
 
 interface Message {
   id?: number
@@ -15,6 +16,9 @@ interface Conversation {
   updated_at: string
   message_count: number
   last_message: string | null
+  user_id: number | null
+  username: string | null
+  has_rag: boolean
 }
 
 interface LLMConfig {
@@ -30,6 +34,8 @@ interface LLMConfig {
 }
 
 function Chat() {
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
   const [messages, setMessages] = useState<Message[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversation, setCurrentConversation] = useState<number | null>(null)
@@ -253,8 +259,14 @@ function Chat() {
                 title={conv.title || 'Без названия'}
               >
                 <div className="conv-content">
-                  <div className="conv-title">{conv.title || 'Новая беседа'}</div>
+                  <div className="conv-title-row">
+                    <span className="conv-title">{conv.title || 'Новая беседа'}</span>
+                    {conv.has_rag && <span className="rag-badge" title="Использовался RAG">RAG</span>}
+                  </div>
                   <div className="conv-meta">
+                    {isAdmin && conv.username && (
+                      <span className="conv-user">@{conv.username}</span>
+                    )}
                     <span>{formatDate(conv.updated_at)}</span>
                     <span>• {conv.message_count} сообщ.</span>
                   </div>
@@ -537,17 +549,45 @@ function Chat() {
           flex: 1;
           min-width: 0;
         }
+        .conv-title-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 2px;
+        }
         .conv-title {
           font-size: 13px;
           font-weight: 500;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          margin-bottom: 2px;
+          flex: 1;
+          min-width: 0;
+        }
+        .rag-badge {
+          font-size: 9px;
+          padding: 2px 5px;
+          background: rgba(34, 197, 94, 0.2);
+          color: #22c55e;
+          border-radius: 3px;
+          font-weight: 600;
+          flex-shrink: 0;
         }
         .conv-meta {
           font-size: 11px;
           color: #888;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          flex-wrap: wrap;
+        }
+        .conv-user {
+          color: #a5b4fc;
+          font-weight: 500;
+        }
+        .conv-user::after {
+          content: '•';
+          margin-left: 4px;
         }
         .conv-delete {
           background: none;

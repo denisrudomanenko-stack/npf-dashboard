@@ -33,8 +33,13 @@ class Settings(BaseSettings):
 
     # Timeweb AI (cloud AI provider)
     timeweb_ai_token: Optional[str] = None
-    timeweb_agent_id: Optional[str] = None
+    timeweb_agent_id: Optional[str] = None  # Agent with RAG (OpenSearch)
+    timeweb_agent_id_no_rag: Optional[str] = None  # Agent without RAG (direct chat)
     timeweb_ai_model: str = "deepseek-reasoner"
+
+    # DeepSeek API (direct, for non-RAG chat)
+    deepseek_api_key: Optional[str] = None
+    deepseek_model: str = "deepseek-chat"
 
     # LLM Provider settings (runtime configurable)
     chat_provider: str = "ollama"  # ollama, anthropic, or timeweb

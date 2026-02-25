@@ -1,5 +1,5 @@
-# Simple server configuration (without AI/LLM)
-# Only: PostgreSQL + Backend + Frontend
+# Server configuration (Timeweb AI for RAG)
+# PostgreSQL + Backend + Frontend
 #
 # Usage: docker compose -f docker-compose.simple.yml --env-file .env.server up -d
 
@@ -9,7 +9,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
     networks:
@@ -24,6 +28,8 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - npf_uploads:/app/uploads
+      - npf_documents:/app/data/documents
+      - npf_chroma:/app/data/chromadb
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-npf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-npf_db}
       - SECRET_KEY=${SECRET_KEY}
@@ -39,6 +45,8 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - TIMEWEB_AI_TOKEN=${TIMEWEB_AI_TOKEN:-}
       - TIMEWEB_AGENT_ID=${TIMEWEB_AGENT_ID:-}
+      - TIMEWEB_AGENT_ID_NO_RAG=${TIMEWEB_AGENT_ID_NO_RAG:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - CHAT_PROVIDER=${CHAT_PROVIDER:-timeweb}
     depends_on:
       postgres:
@@ -71,3 +79,5 @@ networks:
 volumes:
   npf_postgres_data:
   npf_uploads:
+  npf_documents:
+  npf_chroma:

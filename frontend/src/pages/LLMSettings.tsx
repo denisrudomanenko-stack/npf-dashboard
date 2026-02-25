@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { usePermissions } from '../hooks/usePermissions'
 
 interface LLMConfig {
   ollama_available: boolean
@@ -13,6 +14,7 @@ interface LLMConfig {
 const API_BASE = '/api/v1/rag'
 
 export default function LLMSettings() {
+  const { isAdmin } = usePermissions()
   const [config, setConfig] = useState<LLMConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
@@ -111,6 +113,49 @@ export default function LLMSettings() {
     )
   }
 
+  // Read-only view for non-admins
+  if (!isAdmin) {
+    return (
+      <div style={styles.container}>
+        <h1 style={styles.title}>Информация об AI</h1>
+
+        {/* Status indicators */}
+        <div style={styles.statusRow}>
+          <div style={{...styles.statusBadge, ...(config.ollama_available ? styles.statusOk : styles.statusError)}}>
+            Ollama: {config.ollama_available ? 'Доступен' : 'Недоступен'}
+          </div>
+          <div style={{...styles.statusBadge, ...(config.anthropic_configured ? styles.statusOk : styles.statusWarning)}}>
+            Anthropic: {config.anthropic_configured ? 'Настроен' : 'Не настроен'}
+          </div>
+        </div>
+
+        {/* Read-only info cards */}
+        <InfoCard
+          title="Chat (Чат)"
+          description="Модель для генерации ответов в чате"
+          provider={config.chat.provider}
+          model={config.chat.model}
+        />
+        <InfoCard
+          title="Vision (Зрение)"
+          description="Модель для анализа изображений и PDF"
+          provider={config.vision.provider}
+          model={config.vision.model}
+        />
+        <InfoCard
+          title="Embeddings (Векторизация)"
+          description="Модель для создания эмбеддингов документов"
+          provider={config.embeddings.provider}
+          model={config.embeddings.model}
+        />
+
+        <div style={styles.infoNote}>
+          💡 Настройки AI доступны только администраторам
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={styles.container}>
       <h1 style={styles.title}>Настройки LLM</h1>
@@ -171,6 +216,30 @@ export default function LLMSettings() {
         anthropicAvailable={false}
         embeddingsOnly
       />
+    </div>
+  )
+}
+
+// Read-only info card for non-admin users
+interface InfoCardProps {
+  title: string
+  description: string
+  provider: string
+  model: string
+}
+
+function InfoCard({ title, description, provider, model }: InfoCardProps) {
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardHeader}>
+        <h3 style={styles.cardTitle}>{title}</h3>
+        <span style={styles.cardBadge}>{provider}</span>
+      </div>
+      <p style={styles.cardDescription}>{description}</p>
+      <div style={styles.infoRow}>
+        <span style={styles.infoLabel}>Модель:</span>
+        <span style={styles.infoValue}>{model}</span>
+      </div>
     </div>
   )
 }
@@ -435,5 +504,32 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontWeight: 500,
     fontSize: '14px'
+  },
+  infoRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 16px',
+    background: '#f9fafb',
+    borderRadius: '8px'
+  },
+  infoLabel: {
+    color: '#6b7280',
+    fontSize: '14px'
+  },
+  infoValue: {
+    color: '#1f2937',
+    fontSize: '14px',
+    fontWeight: 500
+  },
+  infoNote: {
+    marginTop: '24px',
+    padding: '16px',
+    background: '#fffbeb',
+    border: '1px solid #fde68a',
+    borderRadius: '12px',
+    color: '#92400e',
+    fontSize: '14px',
+    textAlign: 'center'
   }
 }

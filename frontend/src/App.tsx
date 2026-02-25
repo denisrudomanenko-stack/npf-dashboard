@@ -11,6 +11,7 @@ import Documents from './pages/Documents'
 import Models from './pages/Models'
 import Chat from './pages/Chat'
 import LLMSettings from './pages/LLMSettings'
+import RAGQueue from './pages/RAGQueue'
 import Users from './pages/Users'
 import { useAuthStore } from './stores/authStore'
 
@@ -54,6 +55,7 @@ function App() {
         <Route path="models" element={<Models />} />
         <Route path="chat" element={<Chat />} />
         <Route path="settings/llm" element={<LLMSettings />} />
+        <Route path="settings/rag-queue" element={<RAGQueue />} />
         <Route
           path="users"
           element={

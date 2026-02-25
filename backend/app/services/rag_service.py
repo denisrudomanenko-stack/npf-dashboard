@@ -6,6 +6,7 @@ import logging
 from app.services.document_service import document_service
 from app.services.ollama_service import ollama_service
 from app.services.timeweb_ai_service import timeweb_ai_service
+from app.services.deepseek_service import deepseek_service
 from app.schemas.rag import RAGResponse, RAGSource, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -130,10 +131,16 @@ class RAGService:
         chat_provider = getattr(settings, 'chat_provider', 'ollama')
         chat_model = getattr(settings, 'anthropic_chat_model', 'claude-sonnet-4-20250514') if chat_provider == 'anthropic' else ollama_service.model
 
-        system_prompt = NPF_SYSTEM_PROMPT
+        api_messages = [{"role": m.role, "content": m.content} for m in messages]
 
-        # Only add RAG context if enabled
+        # RAG ON: Use Timeweb /call endpoint with OpenSearch knowledge base
         if use_rag:
+            if chat_provider == "timeweb" and await timeweb_ai_service.is_available():
+                response = await timeweb_ai_service.chat(api_messages, use_rag=True)
+                return {"role": "assistant", "content": response}
+
+            # Fallback: use local RAG (ChromaDB) with other providers
+            system_prompt = NPF_SYSTEM_PROMPT
             last_user_message = next(
                 (m.content for m in reversed(messages) if m.role == "user"),
                 ""
@@ -141,40 +148,48 @@ class RAGService:
             context = await document_service.get_context_for_query(last_user_message)
             if context:
                 system_prompt += f"\n\n{'='*50}\nКОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ (ПРИОРИТЕТНЫЙ ИСТОЧНИК):\n{'='*50}\n{context}\n\nИспользуй информацию из базы знаний как основной источник для ответа."
+
+            if self.anthropic_client:
+                message = self.anthropic_client.messages.create(
+                    model=chat_model,
+                    max_tokens=2048,
+                    system=system_prompt,
+                    messages=api_messages
+                )
+                response = message.content[0].text
+            elif await ollama_service.is_available():
+                response = await ollama_service.chat(api_messages, system=system_prompt)
+            else:
+                response = "RAG недоступен. Настройте Timeweb, Anthropic или Ollama."
+
+        # RAG OFF: Use Timeweb agent (same as RAG ON, since knowledge base is on Timeweb side)
         else:
-            system_prompt = """Ты - эксперт в области негосударственного пенсионного обеспечения (НПО) и Wealth Management.
+            response = None
+
+            # Primary: Timeweb (no-RAG agent if configured, otherwise use RAG agent)
+            if await timeweb_ai_service.is_available(use_rag=False):
+                try:
+                    response = await timeweb_ai_service.chat(api_messages, use_rag=False)
+                except Exception as e:
+                    logger.warning(f"Timeweb (no-RAG) failed: {e}, trying RAG agent")
+                    response = None
+
+            # Fallback: Use RAG agent (better than nothing)
+            if response is None and await timeweb_ai_service.is_available(use_rag=True):
+                try:
+                    response = await timeweb_ai_service.chat(api_messages, use_rag=True)
+                except Exception as e:
+                    logger.warning(f"Timeweb (RAG) failed: {e}")
+                    response = None
+
+            # Fallback: Ollama
+            if response is None and await ollama_service.is_available():
+                system_prompt = """Ты - эксперт в области негосударственного пенсионного обеспечения (НПО).
 Отвечай на вопросы используя свои знания. Отвечай на русском языке."""
+                response = await ollama_service.chat(api_messages, system=system_prompt)
 
-        api_messages = [{"role": m.role, "content": m.content} for m in messages]
-
-        # Use configured provider
-        if chat_provider == "timeweb" and await timeweb_ai_service.is_available():
-            response = await timeweb_ai_service.chat(api_messages, system=system_prompt)
-        elif chat_provider == "anthropic" and self.anthropic_client:
-            message = self.anthropic_client.messages.create(
-                model=chat_model,
-                max_tokens=2048,
-                system=system_prompt,
-                messages=api_messages
-            )
-            response = message.content[0].text
-        elif chat_provider == "ollama" and await ollama_service.is_available():
-            response = await ollama_service.chat(api_messages, system=system_prompt)
-        # Fallback chain
-        elif await timeweb_ai_service.is_available():
-            response = await timeweb_ai_service.chat(api_messages, system=system_prompt)
-        elif self.anthropic_client:
-            message = self.anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=2048,
-                system=system_prompt,
-                messages=api_messages
-            )
-            response = message.content[0].text
-        elif await ollama_service.is_available():
-            response = await ollama_service.chat(api_messages, system=system_prompt)
-        else:
-            response = "LLM провайдер недоступен. Настройте Timeweb AI, Anthropic или Ollama."
+            if response is None:
+                response = "AI-ассистент временно недоступен. Попробуйте позже."
 
         return {"role": "assistant", "content": response}
 
@@ -222,6 +237,7 @@ class RAGService:
             **doc_stats,
             "llm_provider": provider,
             "timeweb_available": await timeweb_ai_service.is_available(),
+            "deepseek_available": await deepseek_service.is_available(),
             "ollama_available": await ollama_service.is_available(),
             "anthropic_configured": self.anthropic_client is not None
         }

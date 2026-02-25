@@ -75,7 +75,11 @@ ollama pull nomic-embed-text # Модель для эмбеддингов
 - **Python 3.11** + FastAPI
 - **SQLAlchemy 2.0** (async ORM)
 - **ChromaDB** (vector store)
-- **Timeweb AI** (DeepSeek Reasoner) / **Ollama** / **Anthropic** (Claude API)
+- **LLM провайдеры:**
+  - **Timeweb AI** (DeepSeek Reasoner + OpenSearch RAG)
+  - **DeepSeek API** (прямой чат без RAG)
+  - **Ollama** (локальный, эмбеддинги)
+  - **Anthropic** (Claude API, OCR)
 - **Pydantic** (validation)
 
 ### Infrastructure
@@ -193,14 +197,35 @@ NPF-project/
 
 ### AI Chat
 - Multi-turn разговоры
-- RAG-режим (ответы из базы знаний)
+- RAG-режим (ответы из базы знаний Timeweb OpenSearch)
+- **Автогенерация названий чатов** через Timeweb AI (до 30 символов)
 - Streaming responses (SSE)
 - **3 LLM провайдера:** Timeweb AI, Ollama, Anthropic
-- **Настройки LLM** в боковой панели:
+- **Настройки LLM** (только для Admin):
   - Чат: выбор провайдера и модели
   - OCR: Claude Vision
   - Embeddings: Ollama nomic-embed-text
 - **Индикаторы доступности** провайдеров (TW/OL/CL)
+
+### RAG Queue (Очередь RAG)
+- **Управление документами** для загрузки в Timeweb OpenSearch
+- **Статусы:** Ожидает → В RAG / Отклонён / Не для RAG
+- **Скачивание ZIP** ожидающих документов
+- **Массовая отметка** как загруженных
+- Доступ: только Admin
+
+### Models (Финансовые модели)
+- **Калькулятор МГД** — расчёт минимальной гарантированной доходности:
+  - Транши с датами и суммами
+  - Расчёт по траншам с time fraction
+  - **Актуарный дефицит:** РППО, КБД, Номинал, корректировка МГД
+  - **Два показателя:** покрытие обязательств + актуарный дефицит
+  - Анализ чувствительности (доходность, гарантия, расходы)
+  - Монте-Карло симуляция (вероятность дефицита, VaR 95%)
+  - AI-рекомендации по митигации рисков
+- Unit-экономика (в разработке)
+- Стресс-тестирование (в разработке)
+- Прогнозирование (в разработке)
 
 ---
 
@@ -266,8 +291,9 @@ DELETE /api/v1/users/{id}   # Удалить пользователя
 | Файл | Назначение |
 |------|------------|
 | `backend/app/main.py` | FastAPI entrypoint |
-| `backend/app/services/rag_service.py` | RAG + LLM логика (3 провайдера) |
-| `backend/app/services/timeweb_ai_service.py` | Timeweb Cloud AI клиент |
+| `backend/app/services/rag_service.py` | RAG + LLM логика (4 провайдера) |
+| `backend/app/services/timeweb_ai_service.py` | Timeweb Cloud AI клиент (RAG) |
+| `backend/app/services/deepseek_service.py` | DeepSeek API клиент (без RAG) |
 | `backend/app/services/ollama_service.py` | Ollama клиент (эмбеддинги + чат) |
 | `backend/app/services/document_service.py` | Индексация документов |
 | `backend/app/api/v1/endpoints/documents.py` | API документов (хранилище, архив) |
@@ -317,10 +343,13 @@ CHROMA_PERSIST_DIRECTORY=./chroma_db
 OLLAMA_BASE_URL=http://localhost:11434
 ANTHROPIC_API_KEY=your-anthropic-key
 
-# Timeweb AI (Cloud)
+# Timeweb AI (Cloud RAG)
 TIMEWEB_AI_TOKEN=your-timeweb-jwt-token
 TIMEWEB_AGENT_ID=your-agent-uuid
 CHAT_PROVIDER=timeweb  # timeweb, ollama, or anthropic
+
+# DeepSeek API (прямой чат без RAG)
+DEEPSEEK_API_KEY=sk-your-deepseek-api-key
 
 # Server
 BACKEND_PORT=8000
@@ -385,23 +414,28 @@ SECRET_KEY=your-jwt-secret
 - [x] **Карточка документа** с редактированием
 - [x] **Настройки LLM** в AI-ассистенте (выбор провайдера/модели)
 - [x] **Индикаторы провайдеров** (TW/OL/CL)
+- [x] **Очередь RAG** — управление документами для Timeweb OpenSearch
+- [x] **Автогенерация названий чатов** через Timeweb AI
+- [x] **Калькулятор МГД** с расчётом актуарного дефицита
+- [x] **Настройки LLM** — read-only для не-админов
 
 ### В планах
 
-#### Приоритет 1: RAG на сервере
-- [ ] ChromaDB для векторного поиска
-- [ ] Ollama для эмбеддингов (nomic-embed-text)
-- [ ] Интеллектуальный импорт Excel с LLM
+#### Приоритет 1: AI-функции
+- [ ] ChromaDB для локального векторного поиска
+- [ ] Ollama для эмбеддингов на сервере (nomic-embed-text)
+- [ ] Интеллектуальный импорт Excel с LLM на сервере
 
-#### Приоритет 2: HTTPS
-- [ ] Домен 24pensi.ru (в процессе регистрации)
-- [ ] Let's Encrypt SSL-сертификат
-- [ ] Certbot установлен, готов к настройке
+#### Приоритет 2: Финансовые модели
+- [ ] Unit-экономика клиента
+- [ ] Стресс-тестирование портфеля
+- [ ] Прогнозирование сборов и участников
 
 #### Приоритет 3: Дополнительные функции
 - [ ] Email уведомления
 - [ ] Экспорт отчётов (PDF, Excel)
 - [ ] Интеграции (1C, CRM)
+- [ ] Telegram-бот для алертов
 
 ---
 
@@ -422,82 +456,84 @@ SECRET_KEY=your-jwt-secret
 | Параметр | Значение |
 |----------|----------|
 | **Провайдер** | Timeweb Cloud |
+| **Домен** | https://24pensi.ru |
 | **IP-адрес** | 217.198.9.249 |
 | **SSH** | `ssh -i ~/.ssh/npf_server root@217.198.9.249` |
-| **Статус** | ✅ Работает (JWT + RBAC + Ownership) |
-| **Frontend** | http://217.198.9.249 |
-| **Backend** | http://217.198.9.249:8000 |
+| **Статус** | ✅ Работает (HTTPS + JWT + RBAC) |
+| **SSL** | Let's Encrypt (автопродление) |
 
 ### Запуск сервера
 ```bash
 ssh -i ~/.ssh/npf_server root@217.198.9.249
 cd /opt/npf-project
-docker compose -f docker-compose.simple.yml --env-file .env.server up -d
+docker compose -f docker-compose.ssl.yml --env-file .env.server up -d
 ```
 
 ### Остановка сервера
 ```bash
 ssh -i ~/.ssh/npf_server root@217.198.9.249
 cd /opt/npf-project
-docker compose -f docker-compose.simple.yml down
+docker compose -f docker-compose.ssl.yml down
+```
+
+### Обновление SSL-сертификата
+```bash
+# Сертификат обновляется автоматически через cron
+# Ручное обновление:
+certbot renew
+docker compose -f docker-compose.ssl.yml restart frontend
 ```
 
 ---
 
-## Последняя сессия (22 февраля 2026)
+## Последняя сессия (25 февраля 2026)
 
 ### Выполнено
 
-#### 1. Timeweb AI интеграция
-- Создан `timeweb_ai_service.py` — OpenAI-совместимый клиент
-- Модель: **DeepSeek Reasoner** (deepseek-reasoner)
-- Обновлён `rag_service.py` — поддержка 3 провайдеров (timeweb → anthropic → ollama)
-- Добавлены переменные: `TIMEWEB_AI_TOKEN`, `TIMEWEB_AGENT_ID`, `CHAT_PROVIDER`
+#### 1. Калькулятор МГД — Актуарный дефицит
+- **Новые входные параметры:**
+  - РППО (резерв покрытия пенсионных обязательств)
+  - КБД (кривая бескупонной доходности, % годовых)
+  - Номинал (капитал для покрытия обязательств)
+- **Замена параметра:** `mf%` → `Расходы и издержки` (дефолт 3%)
+- **Новые расчёты:**
+  ```
+  Корректировка МГД = max(0, (КБД - r_gross) × РППО)
+  Актуарные обязательства = РППО + Корректировка_МГД
+  Актуарный дефицит = max(0, Актуарные_обязательства - Номинал)
+  ```
+- **Два выходных показателя:**
+  - Покрытие обязательств (дефицит/профицит по гарантии)
+  - Актуарный дефицит (сумма для докапитализации)
+- Таблица детализации актуарного дефицита
+- Обновлённые формулы и рекомендации
 
-#### 2. Улучшения раздела "Документы"
-- **Лимит хранилища:** 3 ГБ для активных документов
-- **Архив:** отдельный лимит 3 ГБ, модальное окно, восстановление/удаление
-- **Шкала заполненности:** цветовая индикация (<80% зелёный, 80-95% оранжевый, >95% красный)
-- **Карточка документа:** просмотр и редактирование атрибутов
-- **Модальные окна:** ErrorModal вместо alert()
-- **Порядок кнопок:** Карточка → Просмотр → Скачать → Архив → Удалить
-- **Blob-загрузка:** авторизованный просмотр/скачивание файлов
+#### 2. Автогенерация названий чатов
+- **Метод `generate_chat_title`** в `timeweb_ai_service.py`
+- Использует Timeweb AI без RAG для генерации названия
+- Название до 30 символов, отражает суть первого сообщения
+- **Endpoint `/conversations/regenerate-titles`** — переименование всех чатов
+- Fallback: обрезка сообщения если AI недоступен
 
-#### 3. Настройки LLM в AI-ассистенте
-- 3 карточки моделей: Чат, OCR, Embed
-- Показ провайдера в каждой карточке
-- Индикаторы доступности: TW (Timeweb), OL (Ollama), CL (Claude)
-- Выбор провайдера и модели в модальном окне
+#### 3. Очередь RAG (22 февраля)
+- Страница `/settings/rag-queue` — управление документами для Timeweb RAG
+- **Статусы документов:** pending → indexed / rejected / not_for_rag
+- Скачивание ZIP ожидающих документов
+- Массовая отметка как загруженных
+- Статистика по статусам
 
-#### 4. Подготовка HTTPS
-- Домен `24pensi.ru` (заявка отправлена)
-- Certbot установлен на сервере
-- Nginx настроен: `client_max_body_size 50M`
-
-### Новые файлы
-| Файл | Описание |
-|------|----------|
-| `backend/app/services/timeweb_ai_service.py` | Клиент Timeweb Cloud AI |
-| `frontend/src/components/StorageBar.tsx` | Шкала заполненности хранилища |
-| `frontend/src/components/ErrorModal.tsx` | Модальное окно ошибок |
+#### 4. Настройки LLM — read-only для не-админов
+- Manager/Viewer видят информацию о моделях без возможности изменения
+- Сообщение "Настройки AI доступны только администраторам"
 
 ### Изменённые файлы
+
 | Backend | Frontend |
 |---------|----------|
-| `app/config.py` | `pages/Chat.tsx` |
-| `app/services/rag_service.py` | `pages/Documents.tsx` |
-| `app/api/v1/endpoints/rag.py` | `pages/Users.tsx` |
-| `app/api/v1/endpoints/documents.py` | `types/index.ts` |
-| `app/models/document.py` | |
-
-### LLM провайдеры
-
-| Провайдер | Модель | Функция | Доступность |
-|-----------|--------|---------|-------------|
-| **Timeweb** | deepseek-reasoner | Чат | Сервер ✅ |
-| **Ollama** | qwen2.5:7b | Чат (локальный) | Dev ✅ |
-| **Ollama** | nomic-embed-text | Эмбеддинги | Dev ✅ |
-| **Anthropic** | claude-sonnet | OCR, резервный чат | Настроен ✅ |
+| `app/services/timeweb_ai_service.py` | `pages/Models.tsx` |
+| `app/api/v1/endpoints/conversations.py` | `pages/LLMSettings.tsx` |
+| `app/api/v1/endpoints/documents.py` | `pages/RAGQueue.tsx` |
+| `app/models/document.py` | `components/Layout.tsx` |
 
 ### Права доступа (RBAC)
 
@@ -509,27 +545,31 @@ docker compose -f docker-compose.simple.yml down
 | Редактирование **чужих** | ✅ | ❌ | ❌ |
 | Удаление **своих** | ✅ | ✅ | ❌ |
 | Удаление **чужих** | ✅ | ❌ | ❌ |
-| Векторизация документов | ✅ | ❌ | ❌ |
+| Очередь RAG | ✅ | ❌ | ❌ |
+| Настройки LLM | ✅ | ❌ | ❌ |
 | Настройки дашборда | ✅ | ❌ | ❌ |
 | Управление пользователями | ✅ | ❌ | ❌ |
 
 ### Текущее состояние
-- **Сервер:** http://217.198.9.249 (работает)
-- **AI-чат:** Timeweb AI (DeepSeek Reasoner)
+- **Сервер:** https://24pensi.ru ✅
+- **SSL:** Let's Encrypt (до 23.05.2026)
+- **AI-чат:** Timeweb AI (DeepSeek Reasoner) с автогенерацией названий
+- **Модели:** Калькулятор МГД с актуарным дефицитом
 - **Авторизация:** JWT + RBAC + Entity Ownership
-- **Данные:** 8 предприятий, 9 задач, 7 вех, 7 рисков
-- **Пользователи:** 3 (admin, manager, viewer)
-- **HTTPS:** в процессе (ожидание домена)
+- **Данные:** 8 предприятий, 9 задач, 7 вех, 7 рисков, 6 чатов
+- **Пользователи:** 3 (AdminNpf, manager, viewer)
 
-### Создание администратора
+### API Endpoints (новые)
 
-**Docker:** Добавьте в `.env.server`:
 ```
-INIT_ADMIN_USERNAME=admin
-INIT_ADMIN_EMAIL=admin@npf.ru
-INIT_ADMIN_PASSWORD=your_secure_password
+POST /api/v1/conversations/regenerate-titles  # Переименовать все чаты
+GET  /api/v1/documents/rag-queue/stats        # Статистика RAG очереди
+GET  /api/v1/documents/rag-queue/list         # Список документов по статусу
+PATCH /api/v1/documents/{id}/rag-status       # Изменить RAG-статус
+POST /api/v1/documents/rag-queue/mark-indexed # Массовая отметка
+GET  /api/v1/documents/rag-queue/download     # Скачать ZIP ожидающих
 ```
 
 ---
 
-*Последнее обновление: 22 февраля 2026*
+*Последнее обновление: 25 февраля 2026*

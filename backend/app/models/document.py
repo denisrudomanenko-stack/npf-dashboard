@@ -23,6 +23,13 @@ class DocumentType(str, enum.Enum):
     OTHER = "other"
 
 
+class RAGStatus(str, enum.Enum):
+    PENDING = "pending"  # Ожидает загрузки в RAG
+    INDEXED = "indexed"  # Загружен в RAG
+    REJECTED = "rejected"  # Отклонён (не нужен в RAG)
+    NOT_FOR_RAG = "not_for_rag"  # Не предназначен для RAG
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -39,6 +46,7 @@ class Document(Base):
 
     content_hash = Column(String(64))  # SHA-256 hash for deduplication
     status = Column(SQLEnum(DocumentStatus), default=DocumentStatus.ACTIVE)
+    rag_status = Column(SQLEnum(RAGStatus), default=RAGStatus.PENDING)  # Status for Timeweb RAG
 
     indexed_at = Column(DateTime(timezone=True))
     chunk_count = Column(Integer, default=0)  # Number of chunks in vector DB

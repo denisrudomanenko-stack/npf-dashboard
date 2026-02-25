@@ -37,14 +37,24 @@ function Layout() {
               </NavLink>
             ))}
             {user?.role === 'admin' && (
-              <NavLink
-                to="/users"
-                className={({ isActive }) =>
-                  `nav-link ${isActive ? 'active' : ''}`
-                }
-              >
-                Пользователи
-              </NavLink>
+              <>
+                <NavLink
+                  to="/users"
+                  className={({ isActive }) =>
+                    `nav-link ${isActive ? 'active' : ''}`
+                  }
+                >
+                  Пользователи
+                </NavLink>
+                <NavLink
+                  to="/settings/rag-queue"
+                  className={({ isActive }) =>
+                    `nav-link ${isActive ? 'active' : ''}`
+                  }
+                >
+                  Очередь RAG
+                </NavLink>
+              </>
             )}
           </nav>
 
@@ -88,16 +98,28 @@ function Layout() {
           </NavLink>
         ))}
         {user?.role === 'admin' && (
-          <NavLink
-            to="/users"
-            onClick={closeMenu}
-            className={({ isActive }) =>
-              `mobile-nav-link ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="mobile-nav-icon">👥</span>
-            Пользователи
-          </NavLink>
+          <>
+            <NavLink
+              to="/users"
+              onClick={closeMenu}
+              className={({ isActive }) =>
+                `mobile-nav-link ${isActive ? 'active' : ''}`
+              }
+            >
+              <span className="mobile-nav-icon">👥</span>
+              Пользователи
+            </NavLink>
+            <NavLink
+              to="/settings/rag-queue"
+              onClick={closeMenu}
+              className={({ isActive }) =>
+                `mobile-nav-link ${isActive ? 'active' : ''}`
+              }
+            >
+              <span className="mobile-nav-icon">📚</span>
+              Очередь RAG
+            </NavLink>
+          </>
         )}
       </nav>
 

@@ -99,12 +99,14 @@ async def get_ai_status():
     """Get AI services availability status."""
     from app.services.ollama_service import ollama_service
     from app.services.timeweb_ai_service import timeweb_ai_service
+    from app.services.deepseek_service import deepseek_service
 
     ollama_available = await ollama_service.is_available()
     timeweb_available = await timeweb_ai_service.is_available()
+    deepseek_available = await deepseek_service.is_available()
     anthropic_configured = bool(settings.anthropic_api_key)
 
-    any_llm_available = ollama_available or timeweb_available or anthropic_configured
+    any_llm_available = ollama_available or timeweb_available or deepseek_available or anthropic_configured
 
     return {
         "ai_available": any_llm_available,
@@ -112,8 +114,10 @@ async def get_ai_status():
         "can_suggest_name": any_llm_available,
         "can_ocr": anthropic_configured,  # Requires Claude Vision
         "can_chat": any_llm_available,
+        "can_chat_without_rag": deepseek_available or anthropic_configured or ollama_available,
         "providers": {
             "timeweb": timeweb_available,
+            "deepseek": deepseek_available,
             "ollama": ollama_available,
             "anthropic": anthropic_configured
         }

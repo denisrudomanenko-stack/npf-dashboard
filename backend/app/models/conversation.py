@@ -17,11 +17,15 @@ class Conversation(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_archived = Column(Boolean, default=False)
 
+    # Owner (user who created the conversation)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    user = relationship("User", foreign_keys=[user_id])
+
     # Relationship to messages
     messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
 
     def __repr__(self):
-        return f"<Conversation(id={self.id}, title='{self.title}')>"
+        return f"<Conversation(id={self.id}, title='{self.title}', user_id={self.user_id})>"
 
 
 class ChatMessage(Base):

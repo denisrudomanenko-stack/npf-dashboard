@@ -12,7 +12,7 @@ interface MGDInputs {
   tranches: Tranche[]
   guaranteeRate: number // g - annual rate
   grossReturn: number // r - annual rate
-  managementFee: number // mf - annual rate
+  expensesRate: number // expenses - расходы и издержки, annual rate
   performanceFee: number // pf - optional
   dayCountConvention: 'ACT/365' | '30/360'
   startDate: string
@@ -23,6 +23,10 @@ interface MGDInputs {
   volatility: number // sigma for Monte Carlo
   monteCarloEnabled: boolean
   monteCarloSims: number
+  // Actuarial deficit inputs
+  rppo: number // Резерв покрытия пенсионных обязательств
+  kbd: number // Кривая бескупонной доходности, % годовых
+  nominal: number // Номинал (капитал для покрытия обязательств)
 }
 
 interface CalculationResults {
@@ -47,6 +51,10 @@ interface CalculationResults {
   surplus: number
   breakevenReturn: number
   coverageRatio: number
+  // Actuarial deficit
+  mgdCorrection: number // Корректировка МГД
+  actuarialObligations: number // Актуарные обязательства
+  actuarialDeficit: number // Актуарный дефицит
   // Monte Carlo results
   monteCarlo?: {
     probDeficit: number
@@ -105,9 +113,9 @@ function calculateTimeFraction(
 
 function calculate(inputs: MGDInputs): CalculationResults {
   const {
-    tranches, guaranteeRate, grossReturn, managementFee,
+    tranches, guaranteeRate, grossReturn, expensesRate,
     dayCountConvention, startDate, endDate, feeChargingBasis, returnApplicationBasis,
-    guaranteeFirstTrancheOnly
+    guaranteeFirstTrancheOnly, rppo, kbd, nominal
   } = inputs
 
   const totalPeriodDays = daysBetween(startDate, endDate, dayCountConvention)
@@ -133,7 +141,7 @@ function calculate(inputs: MGDInputs): CalculationResults {
     const grossIncomeB = amount * grossReturn * timeFraction * periodYearFraction
 
     // Fees for this tranche (if basis B)
-    const feesB = amount * managementFee * timeFraction * periodYearFraction
+    const feesB = amount * expensesRate * timeFraction * periodYearFraction
 
     return {
       id: t.id,
@@ -159,10 +167,10 @@ function calculate(inputs: MGDInputs): CalculationResults {
     grossIncome = trancheDetails.reduce((sum, t) => sum + t.grossIncome, 0)
   }
 
-  // Fees
+  // Fees (расходы и издержки)
   let totalFees: number
   if (feeChargingBasis === 'A') {
-    totalFees = weightedNAV * managementFee * periodYearFraction
+    totalFees = weightedNAV * expensesRate * periodYearFraction
   } else {
     totalFees = trancheDetails.reduce((sum, t) => sum + t.fees, 0)
   }
@@ -180,6 +188,17 @@ function calculate(inputs: MGDInputs): CalculationResults {
 
   const coverageRatio = guaranteedAccrual > 0 ? netIncome / guaranteedAccrual : 1
 
+  // Actuarial deficit calculation
+  // Корректировка МГД = max(0, (КБД - МГД_гросс) × РППО)
+  // Если КБД > grossReturn, возникает дополнительная нагрузка
+  const mgdCorrection = Math.max(0, (kbd - grossReturn) * rppo)
+
+  // Актуарные обязательства = РППО + Корректировка МГД
+  const actuarialObligations = rppo + mgdCorrection
+
+  // Актуарный дефицит = max(0, Актуарные обязательства - Номинал)
+  const actuarialDeficit = Math.max(0, actuarialObligations - nominal)
+
   return {
     trancheDetails,
     totalDeposit,
@@ -191,7 +210,10 @@ function calculate(inputs: MGDInputs): CalculationResults {
     deficit,
     surplus,
     breakevenReturn,
-    coverageRatio
+    coverageRatio,
+    mgdCorrection,
+    actuarialObligations,
+    actuarialDeficit
   }
 }
 
@@ -238,7 +260,7 @@ function runMonteCarlo(inputs: MGDInputs, sims: number = 10000): CalculationResu
   }
 }
 
-function calculateSensitivity(inputs: MGDInputs, paramName: 'grossReturn' | 'guaranteeRate' | 'managementFee'): SensitivityPoint[] {
+function calculateSensitivity(inputs: MGDInputs, paramName: 'grossReturn' | 'guaranteeRate' | 'expensesRate'): SensitivityPoint[] {
   const deltas = [-0.02, -0.01, -0.005, 0, 0.005, 0.01, 0.02]
   return deltas.map(delta => {
     const modifiedInputs = { ...inputs, [paramName]: inputs[paramName] + delta }
@@ -250,6 +272,22 @@ function calculateSensitivity(inputs: MGDInputs, paramName: 'grossReturn' | 'gua
 function generateRecommendations(inputs: MGDInputs, results: CalculationResults): Recommendation[] {
   const recs: Recommendation[] = []
   const mc = results.monteCarlo
+
+  // Actuarial deficit recommendations
+  if (results.actuarialDeficit > 0) {
+    recs.push({
+      category: 'governance',
+      priority: 'high',
+      text: `Актуарный дефицит ${formatCurrency(results.actuarialDeficit)}. Требуется докапитализация или пересмотр условий гарантии`
+    })
+    if (results.mgdCorrection > 0) {
+      recs.push({
+        category: 'investment',
+        priority: 'high',
+        text: `КБД (${(inputs.kbd).toFixed(1)}%) превышает доходность (${(inputs.grossReturn).toFixed(1)}%). Корректировка МГД: ${formatCurrency(results.mgdCorrection)}`
+      })
+    }
+  }
 
   // Product term mitigations
   if (results.deficit > 0 || (mc && mc.probDeficit > 0.3)) {
@@ -278,17 +316,17 @@ function generateRecommendations(inputs: MGDInputs, results: CalculationResults)
     })
   }
 
-  // Fee restructuring
+  // Fee/expenses restructuring
   if (results.totalFees > results.deficit * 0.5 && results.deficit > 0) {
     recs.push({
       category: 'fees',
       priority: 'medium',
-      text: 'Рассмотреть снижение или отсрочку комиссии при недостижении гарантии (contingent fee)'
+      text: 'Рассмотреть снижение расходов и издержек при недостижении гарантии'
     })
     recs.push({
       category: 'fees',
       priority: 'medium',
-      text: 'Внедрить тарифную сетку: пониженная комиссия при низкой доходности портфеля'
+      text: 'Внедрить тарифную сетку: пониженные расходы при низкой доходности портфеля'
     })
   }
 
@@ -350,7 +388,7 @@ const defaultInputs: MGDInputs = {
   ],
   guaranteeRate: 10, // stored as percentage for easier input
   grossReturn: 8,
-  managementFee: 1.5,
+  expensesRate: 3, // Расходы и издержки, % годовых (было 1.5% mf)
   performanceFee: 0,
   dayCountConvention: 'ACT/365',
   startDate: '2026-01-01',
@@ -360,7 +398,11 @@ const defaultInputs: MGDInputs = {
   guaranteeFirstTrancheOnly: false,
   volatility: 5,
   monteCarloEnabled: true,
-  monteCarloSims: 10000
+  monteCarloSims: 10000,
+  // Actuarial deficit defaults
+  rppo: 100000000, // 100 млн РППО
+  kbd: 12, // КБД 12% годовых
+  nominal: 120000000 // 120 млн номинал
 }
 
 function formatCurrency(value: number): string {
@@ -427,8 +469,9 @@ function Models() {
     ...inputs,
     guaranteeRate: inputs.guaranteeRate / 100,
     grossReturn: inputs.grossReturn / 100,
-    managementFee: inputs.managementFee / 100,
-    volatility: inputs.volatility / 100
+    expensesRate: inputs.expensesRate / 100,
+    volatility: inputs.volatility / 100,
+    kbd: inputs.kbd / 100
   }), [inputs])
 
   // Calculations
@@ -446,7 +489,7 @@ function Models() {
 
   const sensitivityReturn = useMemo(() => calculateSensitivity(calcInputs, 'grossReturn'), [calcInputs])
   const sensitivityGuarantee = useMemo(() => calculateSensitivity(calcInputs, 'guaranteeRate'), [calcInputs])
-  const sensitivityFee = useMemo(() => calculateSensitivity(calcInputs, 'managementFee'), [calcInputs])
+  const sensitivityFee = useMemo(() => calculateSensitivity(calcInputs, 'expensesRate'), [calcInputs])
 
   const recommendations = useMemo(() => generateRecommendations(calcInputs, resultsWithMC), [calcInputs, resultsWithMC])
 
@@ -566,13 +609,13 @@ function Models() {
             </div>
 
             <div className="input-group">
-              <label title="Вознаграждение управляющей компании за управление активами. Уменьшает чистый доход клиента">Комиссия за управление (mf), % годовых</label>
+              <label title="Расходы фонда на управление активами и операционные издержки. Уменьшает чистый доход клиента">Расходы и издержки, % годовых</label>
               <input
                 type="number"
-                value={inputs.managementFee || ''}
-                onChange={handleNumberChange('managementFee')}
+                value={inputs.expensesRate || ''}
+                onChange={handleNumberChange('expensesRate')}
                 step={0.1}
-                title="Рыночный диапазон: 0.5-2.5% годовых. Высокая комиссия при низкой доходности увеличивает вероятность дефицита"
+                title="Включает комиссию УК, операционные расходы. По умолчанию 3% годовых. Влияет на чистый доход и дефицит"
               />
             </div>
 
@@ -693,6 +736,56 @@ function Models() {
             </div>
           </section>
 
+          {/* Actuarial Deficit Parameters */}
+          <section className="input-section">
+            <h3 title="Параметры для расчёта актуарного дефицита: РППО, КБД, Номинал">Актуарный дефицит</h3>
+
+            <div className="input-group">
+              <label title="Резерв покрытия пенсионных обязательств — обязательства фонда перед участниками">РППО, руб.</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={focusedInput === 'rppo' ? (inputs.rppo || '') : formatInputNumber(inputs.rppo)}
+                onChange={e => {
+                  const val = parseInputNumber(e.target.value)
+                  updateInput('rppo', val)
+                }}
+                onFocus={() => setFocusedInput('rppo')}
+                onBlur={() => setFocusedInput(null)}
+                placeholder="Резерв покрытия"
+                title="Совокупные обязательства перед участниками программы"
+              />
+            </div>
+
+            <div className="input-group">
+              <label title="Кривая бескупонной доходности — ставка дисконтирования обязательств">КБД, % годовых</label>
+              <input
+                type="number"
+                value={inputs.kbd || ''}
+                onChange={handleNumberChange('kbd')}
+                step={0.5}
+                title="Актуальная ставка КБД для дисконтирования. При КБД > доходности возникает корректировка МГД"
+              />
+            </div>
+
+            <div className="input-group">
+              <label title="Капитал фонда, направленный на покрытие обязательств">Номинал (капитал), руб.</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={focusedInput === 'nominal' ? (inputs.nominal || '') : formatInputNumber(inputs.nominal)}
+                onChange={e => {
+                  const val = parseInputNumber(e.target.value)
+                  updateInput('nominal', val)
+                }}
+                onFocus={() => setFocusedInput('nominal')}
+                onBlur={() => setFocusedInput(null)}
+                placeholder="Номинал капитала"
+                title="Активы фонда для покрытия актуарных обязательств"
+              />
+            </div>
+          </section>
+
           {/* Monte Carlo */}
           <section className="input-section">
             <h3 title="Стохастическое моделирование для оценки вероятностного распределения дефицита при случайной доходности">Монте-Карло</h3>
@@ -766,10 +859,10 @@ function Models() {
           {/* Calculator Tab */}
           {activeTab === 'calculator' && (
             <div className="calculator-tab">
-              {/* Summary Cards */}
+              {/* Summary Cards - Row 1: Obligations */}
               <div className="summary-cards">
-                <div className={`summary-card ${results.deficit > 0 ? 'deficit' : 'surplus'}`} title={results.deficit > 0 ? 'Дефицит: чистый доход клиентам меньше гарантированного начисления. Требуется докапитализация из собственных средств фонда' : 'Профицит: чистый доход превышает гарантию. Излишек может быть направлен в резерв или распределён'}>
-                  <div className="card-label">Результат</div>
+                <div className={`summary-card ${results.deficit > 0 ? 'deficit' : 'surplus'}`} title={results.deficit > 0 ? 'Дефицит по обязательствам: чистый доход клиентам меньше гарантированного начисления' : 'Профицит: чистый доход превышает гарантию'}>
+                  <div className="card-label">Покрытие обязательств</div>
                   <div className="card-value">
                     {results.deficit > 0
                       ? `Дефицит: ${formatCurrency(results.deficit)}`
@@ -777,11 +870,20 @@ function Models() {
                     }
                   </div>
                 </div>
-                <div className="summary-card" title="Coverage Ratio = Чистый доход / Гарантированное начисление. Значение > 100% означает выполнение гарантии, < 100% — дефицит">
+                <div className={`summary-card ${results.actuarialDeficit > 0 ? 'deficit' : 'surplus'}`} title="Актуарный дефицит: разница между актуарными обязательствами и номиналом. Если > 0, требуется докапитализация">
+                  <div className="card-label">Актуарный дефицит</div>
+                  <div className="card-value">
+                    {results.actuarialDeficit > 0
+                      ? formatCurrency(results.actuarialDeficit)
+                      : 'Нет дефицита'
+                    }
+                  </div>
+                </div>
+                <div className="summary-card" title="Coverage Ratio = Чистый доход / Гарантированное начисление. Значение > 100% означает выполнение гарантии">
                   <div className="card-label">Coverage Ratio</div>
                   <div className="card-value">{(results.coverageRatio * 100).toFixed(1)}%</div>
                 </div>
-                <div className="summary-card" title="Минимальная доходность портфеля, при которой чистый доход клиентам покрывает гарантированное начисление без дефицита">
+                <div className="summary-card" title="Минимальная доходность портфеля для безубыточности">
                   <div className="card-label">Безубыточная доходность</div>
                   <div className="card-value">{formatPercent(results.breakevenReturn)}</div>
                 </div>
@@ -818,8 +920,54 @@ function Models() {
                         <td className="value">{formatCurrency(results.netIncome)}</td>
                       </tr>
                       <tr className={results.deficit > 0 ? 'deficit-row' : 'surplus-row'} title={results.deficit > 0 ? 'Сумма, которую фонд должен доплатить из собственных средств для выполнения гарантии' : 'Превышение чистого дохода над гарантией. Может быть направлено в резерв'}>
-                        <td>{results.deficit > 0 ? 'Дефицит' : 'Профицит'}</td>
+                        <td>{results.deficit > 0 ? 'Дефицит по обязательствам' : 'Профицит'}</td>
                         <td className="value">{formatCurrency(results.deficit > 0 ? results.deficit : results.surplus)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Actuarial Deficit Details */}
+              <div className="results-table">
+                <h3 title="Расчёт актуарного дефицита: РППО, корректировка МГД, актуарные обязательства">Актуарный дефицит</h3>
+                <div className="table-wrapper">
+                  <table>
+                    <tbody>
+                      <tr title="Резерв покрытия пенсионных обязательств — базовые обязательства перед участниками">
+                        <td>РППО</td>
+                        <td className="value">{formatCurrency(inputs.rppo)}</td>
+                      </tr>
+                      <tr title="Ставка КБД для дисконтирования обязательств">
+                        <td>КБД</td>
+                        <td className="value">{inputs.kbd}%</td>
+                      </tr>
+                      <tr title="Ожидаемая валовая доходность инвестиций">
+                        <td>МГД (гросс)</td>
+                        <td className="value">{inputs.grossReturn}%</td>
+                      </tr>
+                      <tr title="Корректировка МГД = max(0, (КБД - МГД_гросс) × РППО). Возникает при КБД > доходности">
+                        <td>Корректировка МГД</td>
+                        <td className={`value ${results.mgdCorrection > 0 ? 'negative' : ''}`}>
+                          {results.mgdCorrection > 0 ? '+' : ''}{formatCurrency(results.mgdCorrection)}
+                        </td>
+                      </tr>
+                      <tr className="total-row" title="Актуарные обязательства = РППО + Корректировка МГД">
+                        <td>Актуарные обязательства</td>
+                        <td className="value">{formatCurrency(results.actuarialObligations)}</td>
+                      </tr>
+                      <tr title="Капитал фонда для покрытия обязательств">
+                        <td>Номинал</td>
+                        <td className="value">{formatCurrency(inputs.nominal)}</td>
+                      </tr>
+                      <tr className={results.actuarialDeficit > 0 ? 'deficit-row' : 'surplus-row'} title="Актуарный дефицит = max(0, Актуарные обязательства - Номинал)">
+                        <td>Актуарный дефицит</td>
+                        <td className="value">
+                          {results.actuarialDeficit > 0
+                            ? formatCurrency(results.actuarialDeficit)
+                            : `Покрытие: ${formatCurrency(inputs.nominal - results.actuarialObligations)}`
+                          }
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -886,12 +1034,29 @@ function Models() {
                     <code>GrossIncome = WeightedNAV × r × yearFrac</code>
                   </div>
                   <div className="formula-block">
-                    <div className="formula-name">Дефицит:</div>
+                    <div className="formula-name">Расходы и издержки:</div>
+                    <code>Expenses = WeightedNAV × expenses_rate × yearFrac</code>
+                  </div>
+                  <div className="formula-block">
+                    <div className="formula-name">Дефицит по обязательствам:</div>
                     <code>Deficit = max(0, GuaranteedAccrual - NetIncome)</code>
                   </div>
                   <div className="formula-block">
                     <div className="formula-name">Безубыточная доходность:</div>
-                    <code>r_breakeven = (Guarantee + Fees) / (WeightedNAV × yearFrac)</code>
+                    <code>r_breakeven = (Guarantee + Expenses) / (WeightedNAV × yearFrac)</code>
+                  </div>
+                  <hr style={{ borderColor: 'rgba(255,255,255,0.2)', margin: '16px 0' }} />
+                  <div className="formula-block">
+                    <div className="formula-name">Корректировка МГД:</div>
+                    <code>MGD_correction = max(0, (KBD - r_gross) × RPPO)</code>
+                  </div>
+                  <div className="formula-block">
+                    <div className="formula-name">Актуарные обязательства:</div>
+                    <code>ActuarialObligations = RPPO + MGD_correction</code>
+                  </div>
+                  <div className="formula-block">
+                    <div className="formula-name">Актуарный дефицит:</div>
+                    <code>ActuarialDeficit = max(0, ActuarialObligations - Nominal)</code>
                   </div>
                 </div>
               )}
@@ -958,13 +1123,13 @@ function Models() {
                 </div>
 
                 <div className="sensitivity-block">
-                  <h4>Комиссия (mf = {inputs.managementFee}%)</h4>
+                  <h4>Расходы (exp = {inputs.expensesRate}%)</h4>
                   <div className="table-wrapper">
                     <table>
                       <thead>
                         <tr>
                           <th>Δ</th>
-                          <th>mf</th>
+                          <th>exp</th>
                           <th>Дефицит</th>
                           <th>Профицит</th>
                         </tr>
@@ -973,7 +1138,7 @@ function Models() {
                         {sensitivityFee.map((p, i) => (
                           <tr key={i} className={p.delta === 0 ? 'baseline' : ''}>
                             <td>{p.delta >= 0 ? '+' : ''}{(p.delta * 100).toFixed(2)}%</td>
-                            <td>{formatPercent(calcInputs.managementFee + p.delta)}</td>
+                            <td>{formatPercent(calcInputs.expensesRate + p.delta)}</td>
                             <td className={p.deficit > 0 ? 'negative' : ''}>{formatCurrency(p.deficit)}</td>
                             <td className={p.surplus > 0 ? 'positive' : ''}>{formatCurrency(p.surplus)}</td>
                           </tr>

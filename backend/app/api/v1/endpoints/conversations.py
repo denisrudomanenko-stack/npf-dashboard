@@ -7,11 +7,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from pydantic import BaseModel
+import logging
 
 from app.database import get_db
 from app.models.conversation import Conversation, ChatMessage
+from app.models.user import User
 from app.services.rag_service import rag_service
+from app.services.timeweb_ai_service import timeweb_ai_service
 from app.schemas.rag import ChatMessage as ChatMessageSchema
+from app.auth.dependencies import get_current_active_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -45,6 +51,9 @@ class ConversationResponse(BaseModel):
     updated_at: datetime
     message_count: int = 0
     last_message: Optional[str] = None
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    has_rag: bool = False  # True if any message used RAG
 
     class Config:
         from_attributes = True
@@ -70,21 +79,24 @@ class ChatInConversationRequest(BaseModel):
 async def list_conversations(
     skip: int = 0,
     limit: int = 50,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
-    """Get all conversations, ordered by most recent."""
-    result = await db.execute(
-        select(Conversation)
-        .where(Conversation.is_archived == False)
-        .order_by(desc(Conversation.updated_at))
-        .offset(skip)
-        .limit(limit)
-    )
+    """Get conversations. Admin sees all, others see only their own."""
+    # Build query based on user role
+    query = select(Conversation).where(Conversation.is_archived == False)
+
+    # Filter by user unless admin
+    if current_user.role != "admin":
+        query = query.where(Conversation.user_id == current_user.id)
+
+    query = query.order_by(desc(Conversation.updated_at)).offset(skip).limit(limit)
+    result = await db.execute(query)
     conversations = result.scalars().all()
 
     response = []
     for conv in conversations:
-        # Get message count and last message
+        # Get message count and check for RAG usage
         msg_result = await db.execute(
             select(ChatMessage)
             .where(ChatMessage.conversation_id == conv.id)
@@ -93,11 +105,24 @@ async def list_conversations(
         messages = msg_result.scalars().all()
 
         last_msg = None
+        has_rag = False
         if messages:
             # Get first user message as preview
             user_msgs = [m for m in messages if m.role == "user"]
             if user_msgs:
                 last_msg = user_msgs[0].content[:100] + "..." if len(user_msgs[0].content) > 100 else user_msgs[0].content
+            # Check if any message used RAG
+            has_rag = any(m.use_rag for m in messages)
+
+        # Get username
+        username = None
+        if conv.user_id:
+            user_result = await db.execute(
+                select(User).where(User.id == conv.user_id)
+            )
+            user = user_result.scalar_one_or_none()
+            if user:
+                username = user.username
 
         response.append(ConversationResponse(
             id=conv.id,
@@ -105,7 +130,10 @@ async def list_conversations(
             created_at=conv.created_at,
             updated_at=conv.updated_at,
             message_count=len(messages),
-            last_message=last_msg
+            last_message=last_msg,
+            user_id=conv.user_id,
+            username=username,
+            has_rag=has_rag
         ))
 
     return response
@@ -114,11 +142,13 @@ async def list_conversations(
 @router.post("/", response_model=ConversationResponse)
 async def create_conversation(
     data: ConversationCreate = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Create a new conversation."""
     conversation = Conversation(
-        title=data.title if data else None
+        title=data.title if data else None,
+        user_id=current_user.id
     )
     db.add(conversation)
     await db.commit()
@@ -130,14 +160,18 @@ async def create_conversation(
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         message_count=0,
-        last_message=None
+        last_message=None,
+        user_id=current_user.id,
+        username=current_user.username,
+        has_rag=False
     )
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetailResponse)
 async def get_conversation(
     conversation_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get a conversation with all its messages."""
     result = await db.execute(
@@ -147,6 +181,10 @@ async def get_conversation(
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Check access: only owner or admin can view
+    if current_user.role != "admin" and conversation.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     # Get messages
     msg_result = await db.execute(
@@ -174,7 +212,8 @@ async def get_conversation(
 @router.delete("/{conversation_id}")
 async def delete_conversation(
     conversation_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a conversation and all its messages."""
     result = await db.execute(
@@ -184,6 +223,10 @@ async def delete_conversation(
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Check access: only owner or admin can delete
+    if current_user.role != "admin" and conversation.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     await db.delete(conversation)
     await db.commit()
@@ -216,7 +259,8 @@ async def update_conversation_title(
 async def chat_in_conversation(
     conversation_id: int,
     request: ChatInConversationRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Send a message in a conversation and get AI response."""
     # Get conversation
@@ -227,6 +271,10 @@ async def chat_in_conversation(
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Check access: only owner or admin can chat
+    if current_user.role != "admin" and conversation.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     # Save user message
     user_message = ChatMessage(
@@ -270,10 +318,15 @@ async def chat_in_conversation(
 
     # Update conversation title if it's the first message
     if not conversation.title and len(history) == 0:
-        # Generate title from first user message
-        title = request.content[:50]
-        if len(request.content) > 50:
-            title += "..."
+        # Generate title using AI
+        logger.info(f"Generating title for new conversation {conversation_id}")
+        try:
+            title = await timeweb_ai_service.generate_chat_title(request.content)
+            logger.info(f"Generated title: {title}")
+        except Exception as e:
+            logger.error(f"Failed to generate title: {e}")
+            # Fallback to truncated message
+            title = request.content[:27] + "..." if len(request.content) > 30 else request.content
         conversation.title = title
 
     # Update conversation timestamp
@@ -323,3 +376,52 @@ async def clear_conversation_messages(
     await db.commit()
 
     return {"message": "Messages cleared", "conversation_id": conversation_id}
+
+
+@router.post("/regenerate-titles")
+async def regenerate_all_titles(
+    db: AsyncSession = Depends(get_db)
+):
+    """Regenerate titles for all conversations using AI."""
+    # Get all conversations
+    result = await db.execute(
+        select(Conversation).where(Conversation.is_archived == False)
+    )
+    conversations = result.scalars().all()
+
+    updated = 0
+    errors = []
+
+    for conv in conversations:
+        # Get first user message
+        msg_result = await db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.conversation_id == conv.id)
+            .where(ChatMessage.role == "user")
+            .order_by(ChatMessage.created_at)
+            .limit(1)
+        )
+        first_message = msg_result.scalar_one_or_none()
+
+        if first_message:
+            try:
+                logger.info(f"Generating title for conversation {conv.id}: {first_message.content[:50]}...")
+                title = await timeweb_ai_service.generate_chat_title(first_message.content)
+                conv.title = title
+                updated += 1
+                logger.info(f"Generated title: {title}")
+            except Exception as e:
+                logger.error(f"Failed to generate title for conversation {conv.id}: {e}")
+                errors.append({"id": conv.id, "error": str(e)})
+                # Fallback
+                conv.title = first_message.content[:27] + "..." if len(first_message.content) > 30 else first_message.content
+                updated += 1
+
+    await db.commit()
+
+    return {
+        "message": f"Updated {updated} conversation titles",
+        "total": len(conversations),
+        "updated": updated,
+        "errors": errors
+    }

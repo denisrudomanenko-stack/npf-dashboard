@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { api } from '../services/api'
 import { usePermissions } from '../hooks/usePermissions'
-import { StorageStats, AIStatus } from '../types'
+import { StorageStats } from '../types'
 import ErrorModal from '../components/ErrorModal'
 import StorageBar from '../components/StorageBar'
 
@@ -34,9 +34,7 @@ interface ErrorModalState {
 }
 
 const MAX_FILE_SIZE_MB = 30
-const MAX_INDEX_SIZE_MB = 10
 const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024 // 30 MB
-const MAX_INDEX_SIZE = MAX_INDEX_SIZE_MB * 1024 * 1024 // 10 MB
 
 const DOC_TYPES = [
   { value: 'regulation', label: 'Регламент' },
@@ -51,7 +49,7 @@ const DOC_TYPES = [
 ]
 
 function Documents() {
-  const { canEdit, canVectorize, canEditEntity } = usePermissions()
+  const { canEdit, canEditEntity } = usePermissions()
   const [documents, setDocuments] = useState<Document[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -64,9 +62,7 @@ function Documents() {
   const [customName, setCustomName] = useState('')
   const [namingLoading, setNamingLoading] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
-  const [vectorizeDoc, setVectorizeDoc] = useState<Document | null>(null)
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null)
-  const [aiStatus, setAiStatus] = useState<AIStatus | null>(null)
   const [errorModal, setErrorModal] = useState<ErrorModalState | null>(null)
   const [cardDoc, setCardDoc] = useState<Document | null>(null)
   const [cardEditMode, setCardEditMode] = useState(false)
@@ -84,7 +80,6 @@ function Documents() {
     loadStats()
     loadStorageStats()
     loadArchiveStats()
-    loadAiStatus()
   }, [])
 
   const loadDocuments = async () => {
@@ -123,15 +118,6 @@ function Documents() {
       setArchiveStats(response.data)
     } catch (error) {
       console.error('Failed to load archive stats:', error)
-    }
-  }
-
-  const loadAiStatus = async () => {
-    try {
-      const response = await api.get('/rag/ai-status')
-      setAiStatus(response.data)
-    } catch (error) {
-      console.error('Failed to load AI status:', error)
     }
   }
 
@@ -181,7 +167,7 @@ function Documents() {
       await api.post('/documents/upload', formData)
       setErrorModal({
         title: 'Файл загружен',
-        message: `Документ успешно загружен.\n\nДля добавления в поисковый индекс нажмите "Векторизировать".`,
+        message: 'Документ успешно загружен.',
         type: 'info'
       })
       loadDocuments()
@@ -320,45 +306,6 @@ function Documents() {
   // Filtered documents
   const activeDocuments = documents.filter(d => d.status === 'active')
   const archivedDocuments = documents.filter(d => d.status === 'archived')
-
-  const openVectorizeModal = (doc: Document) => {
-    // Check file size limit for indexing
-    if (doc.file_size && doc.file_size > MAX_INDEX_SIZE) {
-      setErrorModal({
-        title: 'Файл слишком большой',
-        message: `Файл слишком большой для индексации (${(doc.file_size / 1024 / 1024).toFixed(1)} МБ).\nМаксимальный размер: ${MAX_INDEX_SIZE_MB} МБ`,
-        type: 'warning'
-      })
-      return
-    }
-    setVectorizeDoc(doc)
-  }
-
-  const handleVectorize = async () => {
-    if (!vectorizeDoc) return
-
-    const docTitle = vectorizeDoc.title || vectorizeDoc.original_filename
-    setProcessing(vectorizeDoc.id)
-    setVectorizeDoc(null)
-    try {
-      await api.post(`/documents/${vectorizeDoc.id}/reindex`)
-      setErrorModal({
-        title: 'Индексация завершена',
-        message: `Документ "${docTitle}" добавлен в поисковый индекс.`,
-        type: 'info'
-      })
-      loadDocuments()
-      loadStats()
-    } catch (error: any) {
-      setErrorModal({
-        title: 'Ошибка индексации',
-        message: error.response?.data?.detail || error.message,
-        type: 'error'
-      })
-    } finally {
-      setProcessing(null)
-    }
-  }
 
   const handleInlineCategoryChange = async (docId: number, newCategory: string) => {
     setProcessing(docId)
@@ -526,11 +473,8 @@ function Documents() {
   }
 
   const getStatusBadge = (doc: Document) => {
-    if (doc.indexed_at && doc.chunk_count > 0) {
-      return <span className="status-badge status-vectorized">В индексе ({doc.chunk_count})</span>
-    }
     if (doc.status === 'active') {
-      return <span className="status-badge status-uploaded">Загружен</span>
+      return <span className="status-badge status-uploaded">Активен</span>
     }
     if (doc.status === 'archived') {
       return <span className="status-badge status-archived">Архив</span>
@@ -568,24 +512,24 @@ function Documents() {
     <div className="docs-wrapper">
       {/* Left Sidebar */}
       <aside className="docs-panel">
-        <div className="panel-title">База знаний</div>
+        <div className="panel-title">Документы</div>
 
         {/* Stats */}
-        <div className="stats-card" title="Статистика векторной базы знаний ChromaDB">
+        <div className="stats-card" title="Статистика хранилища документов">
           <div className="stat-row">
             <span className="stat-icon">📄</span>
-            <span className="stat-label">Документов</span>
+            <span className="stat-label">Всего</span>
             <span className="stat-value">{stats?.total_documents || 0}</span>
           </div>
           <div className="stat-row">
             <span className="stat-icon">✅</span>
-            <span className="stat-label">В индексе</span>
-            <span className="stat-value">{stats?.indexed_documents || 0}</span>
+            <span className="stat-label">Активных</span>
+            <span className="stat-value">{activeDocuments.length}</span>
           </div>
           <div className="stat-row">
-            <span className="stat-icon">🧩</span>
-            <span className="stat-label">Фрагментов</span>
-            <span className="stat-value">{stats?.total_chunks || 0}</span>
+            <span className="stat-icon">📦</span>
+            <span className="stat-label">В архиве</span>
+            <span className="stat-value">{archivedDocuments.length}</span>
           </div>
         </div>
 
@@ -628,10 +572,7 @@ function Documents() {
 
         {/* Info */}
         <div className="info-section">
-          <div className="panel-subtitle">Действия</div>
-          <div className="info-item" title="Добавить документ в поисковый индекс для семантического поиска (макс. 10 МБ)">
-            🔍 <strong>Векторизировать</strong> — индексация
-          </div>
+          <div className="panel-subtitle">Подсказки</div>
           <div className="info-item" title="Нажмите на название документа для изменения">
             ✏️ <strong>Название</strong> — кликните для редактирования
           </div>
@@ -796,27 +737,6 @@ function Documents() {
                             </button>
                           )}
 
-                          {/* AI: Векторизация (отдельно) */}
-                          {canVectorize && (
-                            <button
-                              className="action-btn-text btn-vectorize"
-                              onClick={() => openVectorizeModal(doc)}
-                              disabled={
-                                processing === doc.id ||
-                                (doc.indexed_at !== null && doc.chunk_count > 0) ||
-                                !aiStatus?.can_vectorize
-                              }
-                              title={
-                                !aiStatus?.can_vectorize
-                                  ? "AI-функции временно недоступны"
-                                  : doc.indexed_at
-                                    ? `Уже в индексе (${doc.chunk_count} фрагм.)`
-                                    : `Добавить в поисковый индекс (макс. ${MAX_INDEX_SIZE_MB} МБ)`
-                              }
-                            >
-                              🔍 Векторизировать
-                            </button>
-                          )}
                         </td>
                       </tr>
                     ))
@@ -920,9 +840,6 @@ function Documents() {
                   <span>Максимальный размер файла:</span>
                   <strong>{MAX_FILE_SIZE_MB} МБ</strong>
                 </div>
-                <div className="limit-row hint">
-                  <span>Для индексации используйте кнопку "Векторизировать"</span>
-                </div>
               </div>
               <div className="form-field">
                 <label>Категория документа</label>
@@ -935,37 +852,10 @@ function Documents() {
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
-                <span className="field-hint">Влияет на размер фрагментов при индексации</span>
               </div>
               <div className="modal-actions">
                 <button className="btn-cancel" onClick={() => setShowUploadModal(false)}>Отмена</button>
                 <button className="btn-primary" onClick={confirmUpload}>Выбрать файл</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Vectorize Modal */}
-      {vectorizeDoc && (
-        <div className="modal-overlay" onClick={() => setVectorizeDoc(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Индексация документа</h3>
-              <button className="close-btn" onClick={() => setVectorizeDoc(null)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <p className="modal-doc-name">{vectorizeDoc.title || vectorizeDoc.original_filename}</p>
-              <div className="vectorize-info">
-                <p>Документ будет разбит на фрагменты и добавлен в поисковый индекс для семантического поиска.</p>
-                <div className="limit-row">
-                  <span>Макс. размер для индексации:</span>
-                  <strong>{MAX_INDEX_SIZE_MB} МБ</strong>
-                </div>
-              </div>
-              <div className="modal-actions">
-                <button className="btn-cancel" onClick={() => setVectorizeDoc(null)}>Отмена</button>
-                <button className="btn-primary" onClick={handleVectorize}>Векторизировать</button>
               </div>
             </div>
           </div>
@@ -1072,19 +962,9 @@ function Documents() {
                       <span className="card-value">{getStatusBadge(cardDoc)}</span>
                     </div>
                     <div className="card-row">
-                      <span className="card-label">Фрагментов:</span>
-                      <span className="card-value">{cardDoc.chunk_count || 0}</span>
-                    </div>
-                    <div className="card-row">
                       <span className="card-label">Загружен:</span>
                       <span className="card-value">{new Date(cardDoc.created_at).toLocaleString('ru')}</span>
                     </div>
-                    {cardDoc.indexed_at && (
-                      <div className="card-row">
-                        <span className="card-label">Индексирован:</span>
-                        <span className="card-value">{new Date(cardDoc.indexed_at).toLocaleString('ru')}</span>
-                      </div>
-                    )}
                   </div>
 
                   <div className="card-actions">
