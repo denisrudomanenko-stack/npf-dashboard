@@ -86,3 +86,22 @@ class SalesDataAggregated(BaseModel):
 
 class SalesDataBulkImport(BaseModel):
     data: List[SalesDataCreate]
+
+
+class SalesDataImportPreviewResponse(BaseModel):
+    columns: List[str]
+    sample_data: List[dict]
+    suggested_mapping: dict
+    available_fields: dict
+    total_rows: int
+    mapping_method: str  # 'llm' | 'fallback'
+    detected_track: Optional[str] = None
+
+
+class SalesDataImportResponse(BaseModel):
+    message: str
+    imported: int
+    skipped: int = 0
+    updated: int = 0
+    errors: Optional[List[str]] = None
+    track: str

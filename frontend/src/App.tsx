@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -14,6 +14,15 @@ import LLMSettings from './pages/LLMSettings'
 import RAGQueue from './pages/RAGQueue'
 import Users from './pages/Users'
 import { useAuthStore } from './stores/authStore'
+
+function ModelsRoute() {
+  const { user } = useAuthStore()
+  // Sales role cannot access Models page
+  if (user?.role === 'sales') {
+    return <Navigate to="/" replace />
+  }
+  return <Models />
+}
 
 function App() {
   const { checkAuth } = useAuthStore()
@@ -52,7 +61,7 @@ function App() {
         <Route path="enterprises" element={<Enterprises />} />
         <Route path="roadmap" element={<Roadmap />} />
         <Route path="documents" element={<Documents />} />
-        <Route path="models" element={<Models />} />
+        <Route path="models" element={<ModelsRoute />} />
         <Route path="chat" element={<Chat />} />
         <Route path="settings/llm" element={<LLMSettings />} />
         <Route path="settings/rag-queue" element={<RAGQueue />} />

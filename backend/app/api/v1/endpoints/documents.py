@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from typing import List, Optional
 from pydantic import BaseModel
 import hashlib
@@ -824,11 +824,14 @@ async def get_rag_queue_stats(
     current_user: User = Depends(require_admin)
 ):
     """Get RAG queue statistics."""
-    # Count by status
+    # Count by status (NULL is treated as PENDING for old documents)
     pending = await db.execute(
         select(func.count(Document.id)).where(
             Document.status == DocumentStatus.ACTIVE,
-            Document.rag_status == RAGStatus.PENDING
+            or_(
+                Document.rag_status == RAGStatus.PENDING,
+                Document.rag_status.is_(None)
+            )
         )
     )
     indexed = await db.execute(
@@ -863,7 +866,16 @@ async def get_rag_queue(
     if status:
         try:
             rag_status = RAGStatus(status)
-            query = query.where(Document.rag_status == rag_status)
+            # NULL is treated as PENDING for old documents
+            if rag_status == RAGStatus.PENDING:
+                query = query.where(
+                    or_(
+                        Document.rag_status == RAGStatus.PENDING,
+                        Document.rag_status.is_(None)
+                    )
+                )
+            else:
+                query = query.where(Document.rag_status == rag_status)
         except ValueError:
             pass
 
@@ -938,11 +950,14 @@ async def download_pending_documents(
     import tempfile
     from fastapi.responses import FileResponse
 
-    # Get pending documents
+    # Get pending documents (NULL is treated as PENDING for old documents)
     result = await db.execute(
         select(Document).where(
             Document.status == DocumentStatus.ACTIVE,
-            Document.rag_status == RAGStatus.PENDING
+            or_(
+                Document.rag_status == RAGStatus.PENDING,
+                Document.rag_status.is_(None)
+            )
         )
     )
     docs = result.scalars().all()

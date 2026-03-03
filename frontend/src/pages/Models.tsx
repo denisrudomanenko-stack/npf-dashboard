@@ -24,9 +24,11 @@ interface MGDInputs {
   monteCarloEnabled: boolean
   monteCarloSims: number
   // Actuarial deficit inputs
-  rppo: number // Резерв покрытия пенсионных обязательств
-  kbd: number // Кривая бескупонной доходности, % годовых
-  nominal: number // Номинал (капитал для покрытия обязательств)
+  kbd: number // Ставка дисконтирования (КБД), % годовых
+  avRate: number // Ставка АВ (актуарной величины), % годовых — для расчёта РППО
+  // Номинал и РППО рассчитываются автоматически:
+  // Номинал = сумма взносов (totalDeposit)
+  // РППО = Номинал / (1 + avRate) — дисконтированный номинал
 }
 
 interface CalculationResults {
@@ -51,10 +53,12 @@ interface CalculationResults {
   surplus: number
   breakevenReturn: number
   coverageRatio: number
-  // Actuarial deficit
-  mgdCorrection: number // Корректировка МГД
-  actuarialObligations: number // Актуарные обязательства
-  actuarialDeficit: number // Актуарный дефицит
+  // Actuarial deficit (автоматический расчёт)
+  nominal: number // Номинал = сумма взносов
+  rppo: number // РППО = Номинал × (1 - КБД + АВ)
+  mgdCorrection: number // Корректировка МГД = max(0, (КБД - r_gross) × РППО)
+  actuarialObligations: number // Актуарные обязательства = РППО + Корректировка МГД
+  actuarialDeficit: number // Актуарный дефицит = max(0, Актуарные обязательства - Номинал)
   // Monte Carlo results
   monteCarlo?: {
     probDeficit: number
@@ -115,7 +119,7 @@ function calculate(inputs: MGDInputs): CalculationResults {
   const {
     tranches, guaranteeRate, grossReturn, expensesRate,
     dayCountConvention, startDate, endDate, feeChargingBasis, returnApplicationBasis,
-    guaranteeFirstTrancheOnly, rppo, kbd, nominal
+    guaranteeFirstTrancheOnly, kbd, avRate
   } = inputs
 
   const totalPeriodDays = daysBetween(startDate, endDate, dayCountConvention)
@@ -189,9 +193,15 @@ function calculate(inputs: MGDInputs): CalculationResults {
   const coverageRatio = guaranteedAccrual > 0 ? netIncome / guaranteedAccrual : 1
 
   // Actuarial deficit calculation
-  // Корректировка МГД = max(0, (КБД - МГД_гросс) × РППО)
-  // Если КБД > grossReturn, возникает дополнительная нагрузка
-  const mgdCorrection = Math.max(0, (kbd - grossReturn) * rppo)
+  // Номинал = сумма взносов
+  const nominal = totalDeposit
+
+  // РППО = Номинал × (1 - КБД + АВ)
+  const rppo = nominal * (1 - kbd + avRate)
+
+  // Корректировка МГД = min(0, (ожидаемая доходность - ставка гарантии) × РППО)
+  // Если гарантия > доходности, возникает отрицательная корректировка (дефицит)
+  const mgdCorrection = Math.min(0, (grossReturn - guaranteeRate) * rppo)
 
   // Актуарные обязательства = РППО + Корректировка МГД
   const actuarialObligations = rppo + mgdCorrection
@@ -211,6 +221,8 @@ function calculate(inputs: MGDInputs): CalculationResults {
     surplus,
     breakevenReturn,
     coverageRatio,
+    nominal,
+    rppo,
     mgdCorrection,
     actuarialObligations,
     actuarialDeficit
@@ -280,11 +292,11 @@ function generateRecommendations(inputs: MGDInputs, results: CalculationResults)
       priority: 'high',
       text: `Актуарный дефицит ${formatCurrency(results.actuarialDeficit)}. Требуется докапитализация или пересмотр условий гарантии`
     })
-    if (results.mgdCorrection > 0) {
+    if (results.mgdCorrection < 0) {
       recs.push({
         category: 'investment',
         priority: 'high',
-        text: `КБД (${(inputs.kbd).toFixed(1)}%) превышает доходность (${(inputs.grossReturn).toFixed(1)}%). Корректировка МГД: ${formatCurrency(results.mgdCorrection)}`
+        text: `Гарантия (${(inputs.guaranteeRate * 100).toFixed(1)}%) превышает доходность (${(inputs.grossReturn * 100).toFixed(1)}%). Корректировка МГД: ${formatCurrency(results.mgdCorrection)}`
       })
     }
   }
@@ -388,7 +400,7 @@ const defaultInputs: MGDInputs = {
   ],
   guaranteeRate: 10, // stored as percentage for easier input
   grossReturn: 8,
-  expensesRate: 3, // Расходы и издержки, % годовых (было 1.5% mf)
+  expensesRate: 3, // Расходы и издержки, % годовых
   performanceFee: 0,
   dayCountConvention: 'ACT/365',
   startDate: '2026-01-01',
@@ -399,10 +411,9 @@ const defaultInputs: MGDInputs = {
   volatility: 5,
   monteCarloEnabled: true,
   monteCarloSims: 10000,
-  // Actuarial deficit defaults
-  rppo: 100000000, // 100 млн РППО
-  kbd: 12, // КБД 12% годовых
-  nominal: 120000000 // 120 млн номинал
+  // Actuarial deficit inputs (Номинал и РППО рассчитываются автоматически)
+  kbd: 12, // КБД (ставка дисконтирования), % годовых
+  avRate: 5 // Ставка АВ, % годовых
 }
 
 function formatCurrency(value: number): string {
@@ -471,7 +482,8 @@ function Models() {
     grossReturn: inputs.grossReturn / 100,
     expensesRate: inputs.expensesRate / 100,
     volatility: inputs.volatility / 100,
-    kbd: inputs.kbd / 100
+    kbd: inputs.kbd / 100,
+    avRate: inputs.avRate / 100
   }), [inputs])
 
   // Calculations
@@ -738,51 +750,39 @@ function Models() {
 
           {/* Actuarial Deficit Parameters */}
           <section className="input-section">
-            <h3 title="Параметры для расчёта актуарного дефицита: РППО, КБД, Номинал">Актуарный дефицит</h3>
+            <h3 title="Параметры для расчёта актуарного дефицита. Номинал = сумма взносов, РППО рассчитывается автоматически">Актуарный дефицит</h3>
 
             <div className="input-group">
-              <label title="Резерв покрытия пенсионных обязательств — обязательства фонда перед участниками">РППО, руб.</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={focusedInput === 'rppo' ? (inputs.rppo || '') : formatInputNumber(inputs.rppo)}
-                onChange={e => {
-                  const val = parseInputNumber(e.target.value)
-                  updateInput('rppo', val)
-                }}
-                onFocus={() => setFocusedInput('rppo')}
-                onBlur={() => setFocusedInput(null)}
-                placeholder="Резерв покрытия"
-                title="Совокупные обязательства перед участниками программы"
-              />
-            </div>
-
-            <div className="input-group">
-              <label title="Кривая бескупонной доходности — ставка дисконтирования обязательств">КБД, % годовых</label>
+              <label title="Ставка дисконтирования для расчёта РППО и корректировки МГД">КБД (ставка дисконтирования), %</label>
               <input
                 type="number"
                 value={inputs.kbd || ''}
                 onChange={handleNumberChange('kbd')}
                 step={0.5}
-                title="Актуальная ставка КБД для дисконтирования. При КБД > доходности возникает корректировка МГД"
+                title="При КБД > доходности возникает корректировка МГД"
               />
             </div>
 
             <div className="input-group">
-              <label title="Капитал фонда, направленный на покрытие обязательств">Номинал (капитал), руб.</label>
+              <label title="Ставка актуарной величины для корректировки РППО">АВ (ставка актуарной величины), %</label>
               <input
-                type="text"
-                inputMode="numeric"
-                value={focusedInput === 'nominal' ? (inputs.nominal || '') : formatInputNumber(inputs.nominal)}
-                onChange={e => {
-                  const val = parseInputNumber(e.target.value)
-                  updateInput('nominal', val)
-                }}
-                onFocus={() => setFocusedInput('nominal')}
-                onBlur={() => setFocusedInput(null)}
-                placeholder="Номинал капитала"
-                title="Активы фонда для покрытия актуарных обязательств"
+                type="number"
+                value={inputs.avRate || ''}
+                onChange={handleNumberChange('avRate')}
+                step={0.5}
+                title="Используется в формуле РППО = Номинал × (1 - КБД + АВ)"
               />
+            </div>
+
+            <div className="calculated-info" title="Номинал и РППО рассчитываются автоматически">
+              <div className="calc-row">
+                <span>Номинал (сумма взносов):</span>
+                <span className="calc-value">{formatCurrency(results.nominal)}</span>
+              </div>
+              <div className="calc-row">
+                <span>РППО = Номинал × (1 - КБД + АВ):</span>
+                <span className="calc-value">{formatCurrency(results.rppo)}</span>
+              </div>
             </div>
           </section>
 
@@ -930,42 +930,50 @@ function Models() {
 
               {/* Actuarial Deficit Details */}
               <div className="results-table">
-                <h3 title="Расчёт актуарного дефицита: РППО, корректировка МГД, актуарные обязательства">Актуарный дефицит</h3>
+                <h3 title="Расчёт актуарного дефицита: Номинал, РППО, корректировка МГД">Актуарный дефицит</h3>
                 <div className="table-wrapper">
                   <table>
                     <tbody>
-                      <tr title="Резерв покрытия пенсионных обязательств — базовые обязательства перед участниками">
-                        <td>РППО</td>
-                        <td className="value">{formatCurrency(inputs.rppo)}</td>
+                      <tr title="Номинал = сумма всех взносов (траншей)">
+                        <td>Номинал (сумма взносов)</td>
+                        <td className="value">{formatCurrency(results.nominal)}</td>
                       </tr>
-                      <tr title="Ставка КБД для дисконтирования обязательств">
+                      <tr title="Ставка КБД для дисконтирования">
                         <td>КБД</td>
                         <td className="value">{inputs.kbd}%</td>
                       </tr>
+                      <tr title="Ставка актуарной величины">
+                        <td>АВ</td>
+                        <td className="value">{inputs.avRate}%</td>
+                      </tr>
+                      <tr title="РППО = Номинал × (1 - КБД + АВ)">
+                        <td>РППО</td>
+                        <td className="value">{formatCurrency(results.rppo)}</td>
+                      </tr>
                       <tr title="Ожидаемая валовая доходность инвестиций">
-                        <td>МГД (гросс)</td>
+                        <td>Ожидаемая доходность</td>
                         <td className="value">{inputs.grossReturn}%</td>
                       </tr>
-                      <tr title="Корректировка МГД = max(0, (КБД - МГД_гросс) × РППО). Возникает при КБД > доходности">
+                      <tr title="Ставка гарантии для расчёта корректировки МГД">
+                        <td>Ставка гарантии</td>
+                        <td className="value">{inputs.guaranteeRate}%</td>
+                      </tr>
+                      <tr title="Корректировка МГД = min(0, (доходность - гарантия) × РППО). Отрицательная при гарантии > доходности">
                         <td>Корректировка МГД</td>
-                        <td className={`value ${results.mgdCorrection > 0 ? 'negative' : ''}`}>
-                          {results.mgdCorrection > 0 ? '+' : ''}{formatCurrency(results.mgdCorrection)}
+                        <td className={`value ${results.mgdCorrection < 0 ? 'negative' : ''}`}>
+                          {formatCurrency(results.mgdCorrection)}
                         </td>
                       </tr>
                       <tr className="total-row" title="Актуарные обязательства = РППО + Корректировка МГД">
                         <td>Актуарные обязательства</td>
                         <td className="value">{formatCurrency(results.actuarialObligations)}</td>
                       </tr>
-                      <tr title="Капитал фонда для покрытия обязательств">
-                        <td>Номинал</td>
-                        <td className="value">{formatCurrency(inputs.nominal)}</td>
-                      </tr>
                       <tr className={results.actuarialDeficit > 0 ? 'deficit-row' : 'surplus-row'} title="Актуарный дефицит = max(0, Актуарные обязательства - Номинал)">
                         <td>Актуарный дефицит</td>
                         <td className="value">
                           {results.actuarialDeficit > 0
                             ? formatCurrency(results.actuarialDeficit)
-                            : `Покрытие: ${formatCurrency(inputs.nominal - results.actuarialObligations)}`
+                            : `Покрытие: ${formatCurrency(results.nominal - results.actuarialObligations)}`
                           }
                         </td>
                       </tr>
@@ -1047,8 +1055,16 @@ function Models() {
                   </div>
                   <hr style={{ borderColor: 'rgba(255,255,255,0.2)', margin: '16px 0' }} />
                   <div className="formula-block">
+                    <div className="formula-name">Номинал (сумма взносов):</div>
+                    <code>Nominal = Σ(tranche_amount)</code>
+                  </div>
+                  <div className="formula-block">
+                    <div className="formula-name">РППО:</div>
+                    <code>RPPO = Nominal × (1 - KBD + AV)</code>
+                  </div>
+                  <div className="formula-block">
                     <div className="formula-name">Корректировка МГД:</div>
-                    <code>MGD_correction = max(0, (KBD - r_gross) × RPPO)</code>
+                    <code>MGD_correction = min(0, (r_gross - guarantee_rate) × RPPO)</code>
                   </div>
                   <div className="formula-block">
                     <div className="formula-name">Актуарные обязательства:</div>
@@ -1501,6 +1517,29 @@ function Models() {
           background: #ef4444;
           color: #fff;
           padding: 3px 5px;
+        }
+
+        .calculated-info {
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          border-radius: 6px;
+          padding: 10px;
+          margin-top: 8px;
+        }
+        .calc-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 11px;
+          color: #a5b4fc;
+          margin-bottom: 4px;
+        }
+        .calc-row:last-child {
+          margin-bottom: 0;
+        }
+        .calc-value {
+          font-family: monospace;
+          font-weight: 600;
         }
 
         /* Results Panel (Main Area) */

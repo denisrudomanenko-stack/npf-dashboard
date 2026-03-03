@@ -79,3 +79,22 @@ export interface AIStatus {
   can_suggest_name: boolean
   can_ocr: boolean
 }
+
+export interface SalesImportPreview {
+  columns: string[]
+  sample_data: Record<string, any>[]
+  suggested_mapping: Record<string, string | null>
+  available_fields: Record<string, { label: string; required: boolean }>
+  total_rows: number
+  mapping_method: 'llm' | 'fallback'
+  detected_track: 'bank' | 'external' | 'zk' | null
+}
+
+export interface SalesImportResponse {
+  message: string
+  imported: number
+  skipped: number
+  updated: number
+  errors?: string[]
+  track: string
+}

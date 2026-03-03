@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 
-const roleLabels = {
+const roleLabels: Record<string, string> = {
   admin: 'Администратор',
   manager: 'Менеджер',
+  sales: 'Продавец',
   viewer: 'Просмотр',
 }
 

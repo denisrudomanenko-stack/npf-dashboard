@@ -16,7 +16,7 @@ from app.models.interaction import Interaction
 from app.models.user import User
 from app.schemas.enterprise import EnterpriseCreate, EnterpriseUpdate, EnterpriseResponse, InteractionCreate, InteractionResponse
 from app.config import settings
-from app.auth.dependencies import get_current_active_user, require_manager, require_ownership
+from app.auth.dependencies import get_current_active_user, require_manager, require_sales_or_higher, require_ownership
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -271,7 +271,7 @@ async def get_enterprise(
 async def create_enterprise(
     enterprise: EnterpriseCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_manager)
+    current_user: User = Depends(require_sales_or_higher)
 ):
     db_enterprise = Enterprise(**enterprise.model_dump(), created_by_id=current_user.id)
     db.add(db_enterprise)
@@ -285,7 +285,7 @@ async def update_enterprise(
     enterprise_id: int,
     enterprise: EnterpriseUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_manager)
+    current_user: User = Depends(require_sales_or_higher)
 ):
     result = await db.execute(select(Enterprise).where(Enterprise.id == enterprise_id))
     db_enterprise = result.scalar_one_or_none()
@@ -307,7 +307,7 @@ async def update_enterprise(
 async def delete_enterprise(
     enterprise_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_manager)
+    current_user: User = Depends(require_sales_or_higher)
 ):
     result = await db.execute(select(Enterprise).where(Enterprise.id == enterprise_id))
     enterprise = result.scalar_one_or_none()

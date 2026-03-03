@@ -91,24 +91,36 @@ async def require_manager(
     return current_user
 
 
+async def require_sales_or_higher(
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """Require sales, manager, or admin role."""
+    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.SALES]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sales access required"
+        )
+    return current_user
+
+
 def check_ownership(entity, current_user: User) -> bool:
     """Check if user can edit/delete the entity.
 
     Returns True if:
     - User is Admin (can edit everything)
-    - User is Manager AND owns the entity (created_by_id matches)
+    - User is Manager or Sales AND owns the entity (created_by_id matches)
 
     Returns False if:
     - User is Viewer
-    - User is Manager but doesn't own the entity
+    - User is Manager/Sales but doesn't own the entity
     - Entity has no owner (created_by_id is None) and user is not Admin
     """
     # Admin can edit everything
     if current_user.role == UserRole.ADMIN:
         return True
 
-    # Manager can only edit their own entities
-    if current_user.role == UserRole.MANAGER:
+    # Manager and Sales can only edit their own entities
+    if current_user.role in [UserRole.MANAGER, UserRole.SALES]:
         # Check if entity has created_by_id attribute
         if not hasattr(entity, 'created_by_id'):
             return False

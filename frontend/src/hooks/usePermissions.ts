@@ -6,8 +6,11 @@ interface Permissions {
   canVectorize: boolean
   canManageUsers: boolean
   canAccessSettings: boolean
+  canViewModels: boolean
+  canEditSalesData: boolean
   isViewer: boolean
   isManager: boolean
+  isSales: boolean
   isAdmin: boolean
   role: UserRole | null
   userId: number | null
@@ -24,12 +27,13 @@ export function usePermissions(): Permissions {
 
   const isViewer = role === 'viewer'
   const isManager = role === 'manager'
+  const isSales = role === 'sales'
   const isAdmin = role === 'admin'
 
   /**
    * Check if user can edit/delete an entity based on ownership.
    * - Admin: can edit any entity
-   * - Manager: can only edit entities they created (created_by_id matches)
+   * - Manager/Sales: can only edit entities they created (created_by_id matches)
    * - Viewer: cannot edit anything
    * - Entities without owner (created_by_id is null): only Admin can edit
    */
@@ -37,8 +41,8 @@ export function usePermissions(): Permissions {
     // Admin can edit everything
     if (isAdmin) return true
 
-    // Manager can only edit their own entities
-    if (isManager) {
+    // Manager and Sales can only edit their own entities
+    if (isManager || isSales) {
       // Old records without owner can only be edited by Admin
       if (createdById === null || createdById === undefined) return false
       return createdById === userId
@@ -49,16 +53,21 @@ export function usePermissions(): Permissions {
   }
 
   return {
-    // Viewers can only view, managers and admins can edit
-    canEdit: isManager || isAdmin,
+    // Viewers can only view, managers, sales and admins can edit
+    canEdit: isManager || isSales || isAdmin,
     // Only admins can vectorize documents
     canVectorize: isAdmin,
     // Only admins can manage users
     canManageUsers: isAdmin,
     // Only admins can access settings
     canAccessSettings: isAdmin,
+    // Sales role cannot view Models page
+    canViewModels: isAdmin || isManager || isViewer,
+    // Sales, manager and admin can edit sales data
+    canEditSalesData: isAdmin || isManager || isSales,
     isViewer,
     isManager,
+    isSales,
     isAdmin,
     role,
     userId,

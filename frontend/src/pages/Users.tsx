@@ -5,12 +5,14 @@ import type { User, UserCreate, UserUpdate, UserRole } from '../types/auth'
 const roleLabels: Record<UserRole, string> = {
   admin: 'Администратор',
   manager: 'Менеджер',
+  sales: 'Продавец',
   viewer: 'Просмотр',
 }
 
 const roleColors: Record<UserRole, { bg: string; text: string }> = {
   admin: { bg: 'rgba(147, 51, 234, 0.15)', text: '#a855f7' },
   manager: { bg: 'rgba(59, 130, 246, 0.15)', text: '#3b82f6' },
+  sales: { bg: 'rgba(34, 197, 94, 0.15)', text: '#22c55e' },
   viewer: { bg: 'rgba(107, 114, 128, 0.15)', text: '#9ca3af' },
 }
 
@@ -349,6 +351,7 @@ export default function Users() {
                   }
                 >
                   <option value="viewer">Просмотр</option>
+                  <option value="sales">Продавец</option>
                   <option value="manager">Менеджер</option>
                   <option value="admin">Администратор</option>
                 </select>

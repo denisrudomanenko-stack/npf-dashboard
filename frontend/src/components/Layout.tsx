@@ -3,11 +3,10 @@ import { Outlet, NavLink } from 'react-router-dom'
 import UserMenu from './UserMenu'
 import { useAuthStore } from '../stores/authStore'
 
-const navItems = [
+const baseNavItems = [
   { path: '/', label: 'Дашборд', icon: '📊' },
   { path: '/enterprises', label: 'Предприятия', icon: '🏢' },
   { path: '/documents', label: 'Документы', icon: '📄' },
-  { path: '/models', label: 'Модели', icon: '📈' },
   { path: '/chat', label: 'AI Ассистент', icon: '🤖' },
 ]
 
@@ -16,6 +15,12 @@ function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const closeMenu = () => setMobileMenuOpen(false)
+
+  // Sales role cannot see Models
+  const canViewModels = user?.role !== 'sales'
+  const navItems = canViewModels
+    ? [...baseNavItems.slice(0, 3), { path: '/models', label: 'Модели', icon: '📈' }, baseNavItems[3]]
+    : baseNavItems
 
   return (
     <div className="layout">

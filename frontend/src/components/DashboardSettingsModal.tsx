@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../services/api'
+import type { SalesImportPreview, SalesImportResponse } from '../types'
 
 interface DashboardSettingsModalProps {
   isOpen: boolean
@@ -132,6 +133,17 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
   const [newBankEntry, setNewBankEntry] = useState(defaultBankEntry)
   const [newExternalEntry, setNewExternalEntry] = useState(defaultExternalEntry)
   const [newZkEntry, setNewZkEntry] = useState(defaultZkEntry)
+
+  // Import state
+  const [importTrack, setImportTrack] = useState<'bank' | 'external' | 'zk' | null>(null)
+  const [importPreview, setImportPreview] = useState<SalesImportPreview | null>(null)
+  const [importMapping, setImportMapping] = useState<Record<string, string | null>>({})
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<SalesImportResponse | null>(null)
+  const [duplicateHandling, setDuplicateHandling] = useState<'skip' | 'update' | 'append'>('skip')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Load configs when modal opens
   useEffect(() => {
@@ -333,6 +345,83 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
     } catch (err) {
       console.error('Failed to seed configs:', err)
     }
+  }
+
+  // Import handlers
+  const handleImportClick = (track: 'bank' | 'external' | 'zk') => {
+    setImportTrack(track)
+    setImportPreview(null)
+    setImportMapping({})
+    setImportFile(null)
+    setImportError(null)
+    setImportResult(null)
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !importTrack) return
+
+    setImportFile(file)
+    setImportLoading(true)
+    setImportError(null)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const response = await api.post(`/sales-data/import/preview?track=${importTrack}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      setImportPreview(response.data)
+      setImportMapping(response.data.suggested_mapping)
+    } catch (err: any) {
+      setImportError(err.response?.data?.detail || 'Ошибка при чтении файла')
+    } finally {
+      setImportLoading(false)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleMappingChange = (column: string, field: string | null) => {
+    setImportMapping(prev => ({ ...prev, [column]: field }))
+  }
+
+  const handleImportConfirm = async () => {
+    if (!importFile || !importTrack) return
+
+    setImportLoading(true)
+    setImportError(null)
+
+    const formData = new FormData()
+    formData.append('file', importFile)
+    formData.append('mapping', JSON.stringify(importMapping))
+    formData.append('track', importTrack)
+    formData.append('duplicate_handling', duplicateHandling)
+
+    try {
+      const response = await api.post('/sales-data/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      setImportResult(response.data)
+      loadSalesData()
+    } catch (err: any) {
+      setImportError(err.response?.data?.detail || 'Ошибка при импорте')
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  const handleImportClose = () => {
+    setImportTrack(null)
+    setImportPreview(null)
+    setImportMapping({})
+    setImportFile(null)
+    setImportError(null)
+    setImportResult(null)
   }
 
   if (!isOpen) return null
@@ -735,12 +824,28 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
         <h4>Оперативные данные продаж</h4>
       </div>
 
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
       <div className="data-tracks">
         {/* КПП в Банке (Трек 1) */}
         <div className="data-track">
           <div className="track-header bank">
             <span className="track-icon">🏦</span>
             <h5>КПП в Банке</h5>
+            <button
+              className="btn-import"
+              onClick={() => handleImportClick('bank')}
+              title="Импорт из Excel"
+            >
+              📥
+            </button>
           </div>
 
           <div className="track-form">
@@ -846,6 +951,13 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
           <div className="track-header external">
             <span className="track-icon">🏢</span>
             <h5>Внешние продажи</h5>
+            <button
+              className="btn-import"
+              onClick={() => handleImportClick('external')}
+              title="Импорт из Excel"
+            >
+              📥
+            </button>
           </div>
 
           <div className="track-form">
@@ -949,6 +1061,13 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
           <div className="track-header zk">
             <span className="track-icon">💼</span>
             <h5>Продажи в ЗК</h5>
+            <button
+              className="btn-import"
+              onClick={() => handleImportClick('zk')}
+              title="Импорт из Excel"
+            >
+              📥
+            </button>
           </div>
 
           <div className="track-form">
@@ -1621,8 +1740,345 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
               flex-direction: column;
             }
           }
+
+          /* Import button styles */
+          .btn-import {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: rgba(255,255,255,0.3);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+          }
+
+          .btn-import:hover {
+            background: rgba(255,255,255,0.5);
+          }
+
+          /* Import modal styles */
+          .import-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+          }
+
+          .import-modal {
+            background: white;
+            border-radius: 12px;
+            width: 700px;
+            max-width: 95vw;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+          }
+
+          .import-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+          }
+
+          .import-modal .modal-header h4 {
+            margin: 0;
+            font-size: 16px;
+          }
+
+          .import-modal .modal-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+          }
+
+          .import-modal .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+          }
+
+          .import-info {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 13px;
+          }
+
+          .import-info .file-name {
+            font-weight: 600;
+            color: var(--primary);
+          }
+
+          .import-info .method-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #dbeafe;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-left: 8px;
+          }
+
+          .mapping-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+          }
+
+          .mapping-table th,
+          .mapping-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+          }
+
+          .mapping-table th {
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            background: #f8f9fa;
+          }
+
+          .mapping-table select {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+          }
+
+          .mapping-table .sample {
+            font-size: 11px;
+            color: var(--text-muted);
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .duplicate-options {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: #fafafa;
+            border-radius: 8px;
+          }
+
+          .duplicate-options h5 {
+            margin: 0 0 10px;
+            font-size: 13px;
+          }
+
+          .duplicate-options .radio-group {
+            display: flex;
+            gap: 16px;
+          }
+
+          .duplicate-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            cursor: pointer;
+          }
+
+          .import-result {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+          }
+
+          .import-result.success {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+          }
+
+          .import-result.error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+          }
+
+          .import-result h5 {
+            margin: 0 0 8px;
+            font-size: 14px;
+          }
+
+          .import-result .stats {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+          }
+
+          .import-result .stats span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          }
+
+          .import-result .errors {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #dc2626;
+          }
+
+          .import-result .errors li {
+            margin-bottom: 4px;
+          }
         `}</style>
       </div>
+
+      {/* Import Modal */}
+      {(importPreview || importLoading || importResult) && (
+        <div className="import-modal-backdrop" onClick={handleImportClose}>
+          <div className="import-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h4>
+                Импорт данных: {importTrack === 'bank' ? 'КПП в Банке' : importTrack === 'external' ? 'Внешние продажи' : 'Продажи в ЗК'}
+              </h4>
+              <button className="modal-close" onClick={handleImportClose}>×</button>
+            </div>
+
+            <div className="modal-content">
+              {importLoading && !importPreview && (
+                <div className="loading-state">Загрузка файла...</div>
+              )}
+
+              {importError && (
+                <div className="import-result error">
+                  <h5>Ошибка</h5>
+                  <p>{importError}</p>
+                </div>
+              )}
+
+              {importResult && (
+                <div className={`import-result ${importResult.errors?.length ? 'error' : 'success'}`}>
+                  <h5>{importResult.message}</h5>
+                  <div className="stats">
+                    <span>✅ Импортировано: {importResult.imported}</span>
+                    {importResult.skipped > 0 && <span>⏭️ Пропущено: {importResult.skipped}</span>}
+                    {importResult.updated > 0 && <span>🔄 Обновлено: {importResult.updated}</span>}
+                  </div>
+                  {importResult.errors && importResult.errors.length > 0 && (
+                    <ul className="errors">
+                      {importResult.errors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {importPreview && !importResult && (
+                <>
+                  <div className="import-info">
+                    <span className="file-name">{importFile?.name}</span>
+                    <span className="method-badge">
+                      {importPreview.mapping_method === 'llm' ? '🤖 AI маппинг' : '📋 Авто-маппинг'}
+                    </span>
+                    <span style={{ marginLeft: 12 }}>
+                      Строк: {importPreview.total_rows}
+                    </span>
+                  </div>
+
+                  <table className="mapping-table">
+                    <thead>
+                      <tr>
+                        <th>Колонка в файле</th>
+                        <th>Пример данных</th>
+                        <th>Поле системы</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.columns.map(col => (
+                        <tr key={col}>
+                          <td>{col}</td>
+                          <td className="sample">
+                            {importPreview.sample_data[0]?.[col] || '—'}
+                          </td>
+                          <td>
+                            <select
+                              value={importMapping[col] || ''}
+                              onChange={e => handleMappingChange(col, e.target.value || null)}
+                            >
+                              <option value="">— Не импортировать —</option>
+                              {Object.entries(importPreview.available_fields).map(([key, info]) => (
+                                <option key={key} value={key}>
+                                  {info.label} {info.required ? '*' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div className="duplicate-options">
+                    <h5>При дублировании даты:</h5>
+                    <div className="radio-group">
+                      <label>
+                        <input
+                          type="radio"
+                          name="duplicate"
+                          checked={duplicateHandling === 'skip'}
+                          onChange={() => setDuplicateHandling('skip')}
+                        />
+                        Пропустить
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="duplicate"
+                          checked={duplicateHandling === 'update'}
+                          onChange={() => setDuplicateHandling('update')}
+                        />
+                        Обновить
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="duplicate"
+                          checked={duplicateHandling === 'append'}
+                          onChange={() => setDuplicateHandling('append')}
+                        />
+                        Добавить новую
+                      </label>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={handleImportClose}>
+                {importResult ? 'Закрыть' : 'Отмена'}
+              </button>
+              {importPreview && !importResult && (
+                <button
+                  className="btn-save"
+                  onClick={handleImportConfirm}
+                  disabled={importLoading || !Object.values(importMapping).some(v => v === 'date')}
+                >
+                  {importLoading ? 'Импорт...' : 'Импортировать'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
