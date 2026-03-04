@@ -891,7 +891,7 @@ async def get_rag_queue(
             "file_type": doc.file_type,
             "file_size": doc.file_size,
             "document_type": doc.document_type.value if doc.document_type else "other",
-            "rag_status": doc.rag_status.value if doc.rag_status else "pending",
+            "rag_status": doc.rag_status.value if doc.rag_status else "PENDING",
             "created_at": doc.created_at.isoformat() if doc.created_at else None,
             "created_by_id": doc.created_by_id
         }

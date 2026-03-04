@@ -24,10 +24,10 @@ class DocumentType(str, enum.Enum):
 
 
 class RAGStatus(str, enum.Enum):
-    PENDING = "pending"  # Ожидает загрузки в RAG
-    INDEXED = "indexed"  # Загружен в RAG
-    REJECTED = "rejected"  # Отклонён (не нужен в RAG)
-    NOT_FOR_RAG = "not_for_rag"  # Не предназначен для RAG
+    PENDING = "PENDING"  # Ожидает загрузки в RAG
+    INDEXED = "INDEXED"  # Загружен в RAG
+    REJECTED = "REJECTED"  # Отклонён (не нужен в RAG)
+    NOT_FOR_RAG = "NOT_FOR_RAG"  # Не предназначен для RAG
 
 
 class Document(Base):
