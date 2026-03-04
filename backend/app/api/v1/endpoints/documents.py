@@ -135,6 +135,162 @@ async def get_archive_stats(
     }
 
 
+# =============================================================================
+# RAG Queue Management (Admin only) - MUST be before /{document_id} routes
+# =============================================================================
+
+class RAGStatusUpdate(BaseModel):
+    status: str  # PENDING, INDEXED, REJECTED, NOT_FOR_RAG
+
+
+@router.get("/rag-queue/stats")
+async def get_rag_queue_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get RAG queue statistics."""
+    # Count by status (NULL is treated as PENDING for old documents)
+    pending = await db.execute(
+        select(func.count(Document.id)).where(
+            Document.status == DocumentStatus.ACTIVE,
+            or_(
+                Document.rag_status == RAGStatus.PENDING,
+                Document.rag_status.is_(None)
+            )
+        )
+    )
+    indexed = await db.execute(
+        select(func.count(Document.id)).where(
+            Document.status == DocumentStatus.ACTIVE,
+            Document.rag_status == RAGStatus.INDEXED
+        )
+    )
+    rejected = await db.execute(
+        select(func.count(Document.id)).where(
+            Document.status == DocumentStatus.ACTIVE,
+            Document.rag_status == RAGStatus.REJECTED
+        )
+    )
+
+    return {
+        "pending": pending.scalar() or 0,
+        "indexed": indexed.scalar() or 0,
+        "rejected": rejected.scalar() or 0
+    }
+
+
+@router.get("/rag-queue/list")
+async def get_rag_queue(
+    status: str = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get documents in RAG queue."""
+    query = select(Document).where(Document.status == DocumentStatus.ACTIVE)
+
+    if status:
+        try:
+            rag_status = RAGStatus(status)
+            # NULL is treated as PENDING for old documents
+            if rag_status == RAGStatus.PENDING:
+                query = query.where(
+                    or_(
+                        Document.rag_status == RAGStatus.PENDING,
+                        Document.rag_status.is_(None)
+                    )
+                )
+            else:
+                query = query.where(Document.rag_status == rag_status)
+        except ValueError:
+            pass
+
+    query = query.order_by(Document.created_at.desc())
+    result = await db.execute(query)
+    docs = result.scalars().all()
+
+    return [
+        {
+            "id": doc.id,
+            "title": doc.title or doc.original_filename,
+            "original_filename": doc.original_filename,
+            "file_type": doc.file_type,
+            "file_size": doc.file_size,
+            "document_type": doc.document_type.value if doc.document_type else "other",
+            "rag_status": doc.rag_status.value if doc.rag_status else "PENDING",
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+            "created_by_id": doc.created_by_id
+        }
+        for doc in docs
+    ]
+
+
+@router.get("/rag-queue/download")
+async def download_pending_documents(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Download all pending documents as a ZIP archive."""
+    import zipfile
+    import tempfile
+    from fastapi.responses import FileResponse
+
+    # Get pending documents (NULL is treated as PENDING for old documents)
+    result = await db.execute(
+        select(Document).where(
+            Document.status == DocumentStatus.ACTIVE,
+            or_(
+                Document.rag_status == RAGStatus.PENDING,
+                Document.rag_status.is_(None)
+            )
+        )
+    )
+    docs = result.scalars().all()
+
+    if not docs:
+        raise HTTPException(status_code=404, detail="No pending documents to download")
+
+    # Create temp ZIP file
+    temp_dir = tempfile.mkdtemp()
+    zip_path = os.path.join(temp_dir, "rag_pending_documents.zip")
+
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for doc in docs:
+            if doc.file_path and os.path.exists(doc.file_path):
+                # Use original filename in archive
+                arcname = doc.original_filename or os.path.basename(doc.file_path)
+                zipf.write(doc.file_path, arcname)
+
+    return FileResponse(
+        path=zip_path,
+        filename="rag_pending_documents.zip",
+        media_type="application/zip",
+        background=None  # File will be cleaned up by OS
+    )
+
+
+@router.post("/rag-queue/mark-indexed")
+async def mark_documents_indexed(
+    document_ids: List[int],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Mark multiple documents as indexed in RAG."""
+    from sqlalchemy import update
+
+    await db.execute(
+        update(Document)
+        .where(Document.id.in_(document_ids))
+        .values(rag_status=RAGStatus.INDEXED)
+    )
+    await db.commit()
+
+    return {"message": f"Marked {len(document_ids)} documents as indexed"}
+
+
+# =============================================================================
+# Document CRUD with {document_id} parameter
+# =============================================================================
+
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: int,
@@ -808,177 +964,3 @@ async def ocr_document(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR failed: {str(e)}")
-
-
-# =============================================================================
-# RAG Queue Management (Admin only)
-# =============================================================================
-
-class RAGStatusUpdate(BaseModel):
-    status: str  # pending, indexed, rejected, not_for_rag
-
-
-@router.get("/rag-queue/stats")
-async def get_rag_queue_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """Get RAG queue statistics."""
-    # Count by status (NULL is treated as PENDING for old documents)
-    pending = await db.execute(
-        select(func.count(Document.id)).where(
-            Document.status == DocumentStatus.ACTIVE,
-            or_(
-                Document.rag_status == RAGStatus.PENDING,
-                Document.rag_status.is_(None)
-            )
-        )
-    )
-    indexed = await db.execute(
-        select(func.count(Document.id)).where(
-            Document.status == DocumentStatus.ACTIVE,
-            Document.rag_status == RAGStatus.INDEXED
-        )
-    )
-    rejected = await db.execute(
-        select(func.count(Document.id)).where(
-            Document.status == DocumentStatus.ACTIVE,
-            Document.rag_status == RAGStatus.REJECTED
-        )
-    )
-
-    return {
-        "pending": pending.scalar() or 0,
-        "indexed": indexed.scalar() or 0,
-        "rejected": rejected.scalar() or 0
-    }
-
-
-@router.get("/rag-queue/list")
-async def get_rag_queue(
-    status: str = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """Get documents in RAG queue."""
-    query = select(Document).where(Document.status == DocumentStatus.ACTIVE)
-
-    if status:
-        try:
-            rag_status = RAGStatus(status)
-            # NULL is treated as PENDING for old documents
-            if rag_status == RAGStatus.PENDING:
-                query = query.where(
-                    or_(
-                        Document.rag_status == RAGStatus.PENDING,
-                        Document.rag_status.is_(None)
-                    )
-                )
-            else:
-                query = query.where(Document.rag_status == rag_status)
-        except ValueError:
-            pass
-
-    query = query.order_by(Document.created_at.desc())
-    result = await db.execute(query)
-    docs = result.scalars().all()
-
-    return [
-        {
-            "id": doc.id,
-            "title": doc.title or doc.original_filename,
-            "original_filename": doc.original_filename,
-            "file_type": doc.file_type,
-            "file_size": doc.file_size,
-            "document_type": doc.document_type.value if doc.document_type else "other",
-            "rag_status": doc.rag_status.value if doc.rag_status else "PENDING",
-            "created_at": doc.created_at.isoformat() if doc.created_at else None,
-            "created_by_id": doc.created_by_id
-        }
-        for doc in docs
-    ]
-
-
-@router.patch("/{document_id}/rag-status")
-async def update_rag_status(
-    document_id: int,
-    update: RAGStatusUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """Update RAG status for a document."""
-    result = await db.execute(select(Document).where(Document.id == document_id))
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    try:
-        new_status = RAGStatus(update.status)
-        doc.rag_status = new_status
-        await db.commit()
-        return {"message": f"RAG status updated to {new_status.value}", "id": document_id}
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid RAG status: {update.status}")
-
-
-@router.post("/rag-queue/mark-indexed")
-async def mark_documents_indexed(
-    document_ids: List[int],
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """Mark multiple documents as indexed in RAG."""
-    from sqlalchemy import update
-
-    await db.execute(
-        update(Document)
-        .where(Document.id.in_(document_ids))
-        .values(rag_status=RAGStatus.INDEXED)
-    )
-    await db.commit()
-
-    return {"message": f"Marked {len(document_ids)} documents as indexed"}
-
-
-@router.get("/rag-queue/download")
-async def download_pending_documents(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """Download all pending documents as a ZIP archive."""
-    import zipfile
-    import tempfile
-    from fastapi.responses import FileResponse
-
-    # Get pending documents (NULL is treated as PENDING for old documents)
-    result = await db.execute(
-        select(Document).where(
-            Document.status == DocumentStatus.ACTIVE,
-            or_(
-                Document.rag_status == RAGStatus.PENDING,
-                Document.rag_status.is_(None)
-            )
-        )
-    )
-    docs = result.scalars().all()
-
-    if not docs:
-        raise HTTPException(status_code=404, detail="No pending documents to download")
-
-    # Create temp ZIP file
-    temp_dir = tempfile.mkdtemp()
-    zip_path = os.path.join(temp_dir, "rag_pending_documents.zip")
-
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for doc in docs:
-            if doc.file_path and os.path.exists(doc.file_path):
-                # Use original filename in archive
-                arcname = doc.original_filename or os.path.basename(doc.file_path)
-                zipf.write(doc.file_path, arcname)
-
-    return FileResponse(
-        path=zip_path,
-        filename="rag_pending_documents.zip",
-        media_type="application/zip",
-        background=None  # File will be cleaned up by OS
-    )
