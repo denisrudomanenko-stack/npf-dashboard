@@ -15,10 +15,25 @@ interface Document {
   title: string
   description: string | null
   status: string
+  rag_status: string
   chunk_count: number
   indexed_at: string | null
   created_by_id: number | null
   created_at: string
+}
+
+const RAG_STATUS_LABELS: Record<string, string> = {
+  'PENDING': 'Ожидает',
+  'INDEXED': 'В RAG',
+  'REJECTED': 'Отклонён',
+  'NOT_FOR_RAG': 'Не для RAG'
+}
+
+const RAG_STATUS_COLORS: Record<string, string> = {
+  'PENDING': '#f59e0b',
+  'INDEXED': '#10b981',
+  'REJECTED': '#ef4444',
+  'NOT_FOR_RAG': '#6b7280'
 }
 
 interface Stats {
@@ -482,6 +497,25 @@ function Documents() {
     return <span className="status-badge">{doc.status}</span>
   }
 
+  const getRagStatusBadge = (doc: Document) => {
+    const status = doc.rag_status || 'PENDING'
+    const label = RAG_STATUS_LABELS[status] || status
+    const color = RAG_STATUS_COLORS[status] || '#6b7280'
+    return (
+      <span
+        className="status-badge"
+        style={{
+          backgroundColor: color + '20',
+          color: color,
+          border: `1px solid ${color}40`
+        }}
+        title={`RAG: ${label}`}
+      >
+        {label}
+      </span>
+    )
+  }
+
   const getTypeLabel = (type: string) => {
     return DOC_TYPES.find(t => t.value === type)?.label || type
   }
@@ -666,7 +700,12 @@ function Documents() {
                             ))}
                           </select>
                         </td>
-                        <td>{getStatusBadge(doc)}</td>
+                        <td>
+                          <div className="status-badges">
+                            {getStatusBadge(doc)}
+                            {getRagStatusBadge(doc)}
+                          </div>
+                        </td>
                         <td className="actions-cell">
                           {/* 1. Карточка */}
                           <button

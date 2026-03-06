@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from app.models.document import DocumentStatus, DocumentType
+from app.models.document import DocumentStatus, DocumentType, RAGStatus
 
 
 class DocumentResponse(BaseModel):
@@ -14,6 +14,7 @@ class DocumentResponse(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     status: DocumentStatus
+    rag_status: Optional[RAGStatus] = RAGStatus.PENDING
     indexed_at: Optional[datetime] = None
     chunk_count: Optional[int] = 0
     created_by_id: Optional[int] = None
