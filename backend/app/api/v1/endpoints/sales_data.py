@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from typing import List, Optional, Dict
@@ -9,6 +10,7 @@ import json
 import re
 import logging
 import httpx
+import xml.etree.ElementTree as ET
 
 from app.database import get_db
 from app.models.sales_data import SalesData
@@ -269,6 +271,70 @@ def suggest_mapping_simple(excel_columns: List[str], track: str) -> Dict[str, Op
     return suggestions
 
 
+def parse_xml_to_dataframe(contents: bytes) -> tuple[pd.DataFrame, Optional[str]]:
+    """Parse XML file to DataFrame and detect track."""
+    try:
+        root = ET.fromstring(contents.decode('utf-8'))
+    except ET.ParseError as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка парсинга XML: {str(e)}")
+
+    # Detect track from root element or attribute
+    detected_track = None
+    if root.tag == 'sales_data':
+        detected_track = root.get('track')
+    elif root.tag in ['bank', 'external', 'zk']:
+        detected_track = root.tag
+
+    # Find records
+    records = []
+    record_elements = root.findall('.//record')
+    if not record_elements:
+        # Try direct children as records
+        record_elements = list(root)
+
+    for record in record_elements:
+        row = {}
+        if record.tag == 'record':
+            for child in record:
+                row[child.tag] = child.text or ''
+        else:
+            # Each child element is a field
+            for child in record:
+                row[child.tag] = child.text or ''
+            if not row:
+                # Maybe the record itself has attributes
+                row = dict(record.attrib)
+        if row:
+            records.append(row)
+
+    if not records:
+        raise HTTPException(status_code=400, detail="XML файл не содержит записей")
+
+    df = pd.DataFrame(records)
+    return df, detected_track
+
+
+def generate_xml_export(data: List[Dict], track: str) -> str:
+    """Generate XML from sales data."""
+    root = ET.Element('sales_data')
+    root.set('track', track)
+    root.set('exported_at', datetime.now().isoformat())
+
+    for item in data:
+        record = ET.SubElement(root, 'record')
+        for key, value in item.items():
+            if value is not None:
+                field = ET.SubElement(record, key)
+                if isinstance(value, (date, datetime)):
+                    field.text = value.isoformat() if hasattr(value, 'isoformat') else str(value)
+                else:
+                    field.text = str(value)
+
+    # Pretty print
+    ET.indent(root, space="  ")
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding='unicode')
+
+
 @router.get("/", response_model=List[SalesDataResponse])
 async def list_sales_data(
     track: Optional[str] = None,
@@ -493,6 +559,121 @@ async def delete_sales_data(
     return {"message": "Sales data deleted"}
 
 
+@router.get("/export/xml")
+async def export_sales_data_xml(
+    track: str = Query(..., enum=['bank', 'external', 'zk']),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Экспорт данных продаж в XML формате."""
+    result = await db.execute(
+        select(SalesData)
+        .where(SalesData.track == track)
+        .order_by(SalesData.date.desc())
+    )
+    items = result.scalars().all()
+
+    if not items:
+        # Return empty sample template
+        fields = TRACK_FIELDS.get(track, COMMON_FIELDS)
+        sample_record = {'date': date.today().isoformat()}
+        for key in fields.keys():
+            if key != 'date':
+                sample_record[key] = ''
+
+        xml_content = generate_xml_export([sample_record], track)
+    else:
+        # Export actual data
+        data = []
+        for item in items:
+            row = {
+                'date': item.date,
+                'notes': item.notes or '',
+            }
+            if track == 'bank':
+                row.update({
+                    'participants': item.participants or 0,
+                    'penetration': item.penetration or 0,
+                    'employee_contributions': item.employee_contributions or 0,
+                    'bank_contributions': item.bank_contributions or 0,
+                })
+            elif track == 'external':
+                row.update({
+                    'enterprises': item.enterprises or 0,
+                    'contracts': item.contracts or 0,
+                    'participants': item.participants or 0,
+                    'collections': item.collections or 0,
+                })
+            elif track == 'zk':
+                row.update({
+                    'dds_count': item.dds_count or 0,
+                    'dds_collections': item.dds_collections or 0,
+                })
+            data.append(row)
+
+        xml_content = generate_xml_export(data, track)
+
+    return Response(
+        content=xml_content,
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": f"attachment; filename=sales_data_{track}.xml"
+        }
+    )
+
+
+@router.get("/export/sample-xml")
+async def get_sample_xml(
+    track: str = Query(..., enum=['bank', 'external', 'zk']),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Получить образец XML-файла для импорта."""
+    fields = TRACK_FIELDS.get(track, COMMON_FIELDS)
+
+    # Create sample records with example data
+    sample_data = []
+    today = date.today()
+
+    for i in range(3):
+        sample_date = date(today.year, today.month - i if today.month > i else 12 - i, 1)
+        row = {'date': sample_date.isoformat()}
+
+        if track == 'bank':
+            row.update({
+                'participants': 1000 + i * 100,
+                'penetration': 45.5 + i * 2,
+                'employee_contributions': 5.2 + i * 0.5,
+                'bank_contributions': 2.6 + i * 0.3,
+                'notes': f'Данные за {sample_date.strftime("%B %Y")}'
+            })
+        elif track == 'external':
+            row.update({
+                'enterprises': 25 + i * 5,
+                'contracts': 30 + i * 8,
+                'participants': 2500 + i * 300,
+                'collections': 12.5 + i * 1.5,
+                'notes': f'Отчёт за {sample_date.strftime("%B %Y")}'
+            })
+        elif track == 'zk':
+            row.update({
+                'dds_count': 500 + i * 50,
+                'dds_collections': 8.3 + i * 0.8,
+                'notes': f'Продажи ЗК за {sample_date.strftime("%B %Y")}'
+            })
+
+        sample_data.append(row)
+
+    xml_content = generate_xml_export(sample_data, track)
+
+    return Response(
+        content=xml_content,
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": f"attachment; filename=sample_{track}.xml"
+        }
+    )
+
+
 @router.post("/import/preview", response_model=SalesDataImportPreviewResponse)
 async def preview_sales_import(
     file: UploadFile = File(...),
@@ -500,16 +681,22 @@ async def preview_sales_import(
     current_user: User = Depends(require_sales_or_higher)
 ):
     """Предпросмотр файла и рекомендация маппинга колонок."""
-    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
-        raise HTTPException(status_code=400, detail="Файл должен быть Excel или CSV")
+    allowed_extensions = ('.xlsx', '.xls', '.csv', '.xml')
+    if not file.filename.endswith(allowed_extensions):
+        raise HTTPException(status_code=400, detail="Файл должен быть Excel, CSV или XML")
 
     contents = await file.read()
+    xml_detected_track = None
 
     try:
-        if file.filename.endswith('.csv'):
+        if file.filename.endswith('.xml'):
+            df, xml_detected_track = parse_xml_to_dataframe(contents)
+        elif file.filename.endswith('.csv'):
             df = pd.read_csv(io.BytesIO(contents))
         else:
             df = pd.read_excel(io.BytesIO(contents))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Не удалось прочитать файл: {str(e)}")
 
@@ -517,8 +704,8 @@ async def preview_sales_import(
     columns = df.columns.tolist()
     sample_data = df.head(5).fillna('').to_dict('records')
 
-    # Detect track if not specified
-    detected_track = track or detect_track(columns, sample_data)
+    # Detect track if not specified (prefer XML attribute, then parameter, then auto-detect)
+    detected_track = track or xml_detected_track or detect_track(columns, sample_data)
     if not detected_track:
         detected_track = 'bank'  # Default to bank
 
@@ -559,8 +746,9 @@ async def import_sales_data(
     current_user: User = Depends(require_sales_or_higher)
 ):
     """Импорт данных продаж с кастомным маппингом."""
-    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
-        raise HTTPException(status_code=400, detail="Файл должен быть Excel или CSV")
+    allowed_extensions = ('.xlsx', '.xls', '.csv', '.xml')
+    if not file.filename.endswith(allowed_extensions):
+        raise HTTPException(status_code=400, detail="Файл должен быть Excel, CSV или XML")
 
     if track not in ['bank', 'external', 'zk']:
         raise HTTPException(status_code=400, detail="Некорректный трек")
@@ -574,10 +762,14 @@ async def import_sales_data(
     contents = await file.read()
 
     try:
-        if file.filename.endswith('.csv'):
+        if file.filename.endswith('.xml'):
+            df, _ = parse_xml_to_dataframe(contents)
+        elif file.filename.endswith('.csv'):
             df = pd.read_csv(io.BytesIO(contents))
         else:
             df = pd.read_excel(io.BytesIO(contents))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Не удалось прочитать файл: {str(e)}")
 

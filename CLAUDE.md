@@ -426,6 +426,12 @@ SECRET_KEY=your-jwt-secret
 
 ### В планах
 
+#### Приоритет 0: Оптимизация кода (КРИТИЧНО)
+- [ ] **Разбить монолитные компоненты Frontend** (13 файлов > 500 строк)
+- [ ] **Вынести бизнес-логику из endpoints в services** (Backend)
+- [ ] **Создать переиспользуемые React hooks** (useTableConfig, usePagination)
+- [ ] **Извлечь константы и конфигурации** в отдельные файлы
+
 #### Приоритет 1: AI-функции
 - [ ] ChromaDB для локального векторного поиска
 - [ ] Ollama для эмбеддингов на сервере (nomic-embed-text)
@@ -441,6 +447,68 @@ SECRET_KEY=your-jwt-secret
 - [ ] Экспорт отчётов (PDF, Excel)
 - [ ] Интеграции (1C, CRM)
 - [ ] Telegram-бот для алертов
+
+---
+
+## Дорожная карта оптимизации кода
+
+### Опорная точка для отката
+```
+Git tag: v1.0-pre-refactoring
+Commit: 015a8eb (feat: Display RAG status badge in Documents list)
+Дата: 6 марта 2026
+```
+
+**Команда отката:**
+```bash
+git checkout v1.0-pre-refactoring
+docker compose -f docker-compose.ssl.yml --env-file .env.server up -d --build
+```
+
+### Метрики до оптимизации
+
+| Метрика | Значение | Целевое |
+|---------|----------|---------|
+| Файлов > 500 строк | 13 | 0 |
+| Макс. размер файла (Frontend) | 2705 строк | < 500 |
+| Макс. размер файла (Backend) | 966 строк | < 400 |
+| Сервисов в Backend | 5 | 10+ |
+| Custom hooks в Frontend | 1 | 5+ |
+
+### Этап 1: Frontend монолиты (Критично)
+
+| Файл | Строк | Декомпозиция |
+|------|------:|--------------|
+| `Enterprises.tsx` | 2705 | → EnterpriseTable, EnterpriseModal, EnterpriseImport, useEnterpriseData |
+| `Dashboard.tsx` | 2378 | → KPICards, Timeline, Pipeline, Funnel, RiskMatrix, Milestones |
+| `Documents.tsx` | 2321 | → DocumentTable, DocumentCard, DocumentUpload, ArchiveView |
+| `DashboardSettingsModal.tsx` | 2114 | → KPITab, ScoringTab, RisksTab, SalesDataTab, FormulasTab |
+| `Models.tsx` | 1993 | → MGDCalculator, SensitivityAnalysis, MonteCarloSimulation |
+
+### Этап 2: Backend endpoints (Высокий приоритет)
+
+| Файл | Строк | Рефакторинг |
+|------|------:|-------------|
+| `documents.py` | 966 | → documents_crud.py, rag_queue.py, archive.py, storage_service.py |
+| `sales_data.py` | 882 | → sales_crud.py, sales_import.py, sales_analytics.py |
+| `dashboard.py` | 690 | → dashboard.py + kpi_service.py |
+
+### Этап 3: Общие улучшения
+
+| Задача | Файлы |
+|--------|-------|
+| Создать `useTableConfig` hook | Enterprises, Documents, SalesData, Users |
+| Создать `usePagination` hook | Все списковые страницы |
+| Вынести TRACK_FIELDS в constants | sales_data.py → app/constants/sales.py |
+| Создать `KPIService` | dashboard.py → app/services/kpi_service.py |
+
+### Порядок выполнения
+
+1. **Enterprises.tsx** — самый большой файл, используется часто
+2. **DashboardSettingsModal.tsx** — сложная модалка с 5 вкладками
+3. **documents.py** — 25 routes, нужно разделить
+4. **Dashboard.tsx** — много виджетов в одном файле
+5. **sales_data.py** — импорт логика смешана с CRUD
 
 ---
 
@@ -683,4 +751,62 @@ POST /api/v1/sales-data/import                # Импорт данных про
 
 ---
 
-*Последнее обновление: 4 марта 2026*
+## Последняя сессия (6 марта 2026)
+
+### Выполнено
+
+#### 1. Добавлен XML формат для импорта данных продаж
+- **Парсинг XML** — функция `parse_xml_to_dataframe()` в `sales_data.py`
+- **Генерация XML** — функция `generate_xml_export()` для экспорта
+- **Новые endpoints:**
+  - `GET /api/v1/sales-data/export/xml?track=` — экспорт данных в XML
+  - `GET /api/v1/sales-data/export/sample-xml?track=` — скачать образец XML
+- **Обновлены endpoints** `/import/preview` и `/import` для поддержки `.xml`
+- **UI:** Ссылка "Скачать образец XML" в модальном окне импорта
+
+#### 2. Экспресс-анализ кодовой базы
+- **Dockerfile:** Frontend оптимизирован (multi-stage), Backend требует улучшений
+- **Зависимости:** Frontend отлично (22 пакета), Backend нормально (42 пакета)
+- **Критическая проблема:** 13 файлов > 500 строк (монолиты)
+- **Причина замедления разработки:** Файлы-монолиты требуют чтения 2000+ строк для изменения одной фичи
+
+#### 3. Создана опорная точка для отката
+- **Git tag:** `v1.0-pre-refactoring`
+- **Commit:** `015a8eb`
+- **Назначение:** Безопасный откат при неудачном рефакторинге
+
+#### 4. Дорожная карта оптимизации
+- Добавлен **Приоритет 0: Оптимизация кода** в раздел "В планах"
+- Создан раздел **"Дорожная карта оптимизации кода"** с метриками и этапами
+- План декомпозиции для 5 критических файлов Frontend и 3 файлов Backend
+
+### Изменённые файлы
+
+| Backend | Frontend |
+|---------|----------|
+| `app/api/v1/endpoints/sales_data.py` | `components/DashboardSettingsModal.tsx` |
+
+### Новые файлы
+
+| Путь | Назначение |
+|------|------------|
+| `data/samples/sales_data_bank.xml` | Образец XML для трека КПП в Банке |
+| `data/samples/sales_data_external.xml` | Образец XML для Внешних продаж |
+| `data/samples/sales_data_zk.xml` | Образец XML для Продаж в ЗК |
+
+### API Endpoints (новые)
+
+```
+GET /api/v1/sales-data/export/xml?track=bank|external|zk      # Экспорт данных в XML
+GET /api/v1/sales-data/export/sample-xml?track=bank|external|zk  # Скачать образец XML
+```
+
+### Текущее состояние
+- **Сервер:** https://24pensi.ru ✅
+- **Git tag:** `v1.0-pre-refactoring` — опорная точка для отката
+- **Импорт данных:** Поддержка Excel (.xlsx, .xls), CSV и XML
+- **Оптимизация:** Запланирована, документация обновлена
+
+---
+
+*Последнее обновление: 6 марта 2026*

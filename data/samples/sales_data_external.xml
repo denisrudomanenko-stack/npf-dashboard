@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sales_data track="external" description="Внешние продажи - построение корпоративного канала">
+  <record>
+    <date>2026-03-01</date>
+    <enterprises>35</enterprises>
+    <contracts>42</contracts>
+    <participants>4200</participants>
+    <collections>18.5</collections>
+    <notes>Отчёт за март 2026</notes>
+  </record>
+  <record>
+    <date>2026-02-01</date>
+    <enterprises>30</enterprises>
+    <contracts>36</contracts>
+    <participants>3600</participants>
+    <collections>15.8</collections>
+    <notes>Отчёт за февраль 2026</notes>
+  </record>
+  <record>
+    <date>2026-01-01</date>
+    <enterprises>25</enterprises>
+    <contracts>30</contracts>
+    <participants>3000</participants>
+    <collections>13.2</collections>
+    <notes>Отчёт за январь 2026</notes>
+  </record>
+</sales_data>

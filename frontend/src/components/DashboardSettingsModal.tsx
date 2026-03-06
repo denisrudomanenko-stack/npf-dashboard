@@ -828,7 +828,7 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
       <input
         ref={fileInputRef}
         type="file"
-        accept=".xlsx,.xls,.csv"
+        accept=".xlsx,.xls,.csv,.xml"
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
@@ -842,7 +842,7 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
             <button
               className="btn-import"
               onClick={() => handleImportClick('bank')}
-              title="Импорт из Excel"
+              title="Импорт из Excel/XML"
             >
               📥
             </button>
@@ -954,7 +954,7 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
             <button
               className="btn-import"
               onClick={() => handleImportClick('external')}
-              title="Импорт из Excel"
+              title="Импорт из Excel/XML"
             >
               📥
             </button>
@@ -1064,7 +1064,7 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
             <button
               className="btn-import"
               onClick={() => handleImportClick('zk')}
-              title="Импорт из Excel"
+              title="Импорт из Excel/XML"
             >
               📥
             </button>
@@ -1809,6 +1809,23 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
             gap: 12px;
           }
 
+          .import-hint {
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: var(--text-muted);
+            background: #f8fafc;
+            border-radius: 6px;
+          }
+
+          .import-hint a {
+            text-decoration: none;
+          }
+
+          .import-hint a:hover {
+            text-decoration: underline;
+          }
+
           .import-info {
             background: #f0f9ff;
             border: 1px solid #bae6fd;
@@ -1952,6 +1969,17 @@ function DashboardSettingsModal({ isOpen, onClose, onSave }: DashboardSettingsMo
             </div>
 
             <div className="modal-content">
+              <div className="import-hint">
+                Поддерживаются форматы: Excel (.xlsx, .xls), CSV и XML.{' '}
+                <a
+                  href={`/api/v1/sales-data/export/sample-xml?track=${importTrack}`}
+                  download
+                  style={{ color: 'var(--primary)' }}
+                >
+                  Скачать образец XML
+                </a>
+              </div>
+
               {importLoading && !importPreview && (
                 <div className="loading-state">Загрузка файла...</div>
               )}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sales_data track="bank" description="КПП в Банке - данные о корпоративной пенсионной программе для сотрудников Банка">
+  <record>
+    <date>2026-03-01</date>
+    <participants>12500</participants>
+    <penetration>48.5</penetration>
+    <employee_contributions>7.8</employee_contributions>
+    <bank_contributions>3.9</bank_contributions>
+    <notes>Данные за март 2026</notes>
+  </record>
+  <record>
+    <date>2026-02-01</date>
+    <participants>12000</participants>
+    <penetration>46.2</penetration>
+    <employee_contributions>7.2</employee_contributions>
+    <bank_contributions>3.6</bank_contributions>
+    <notes>Данные за февраль 2026</notes>
+  </record>
+  <record>
+    <date>2026-01-01</date>
+    <participants>11500</participants>
+    <penetration>44.0</penetration>
+    <employee_contributions>6.9</employee_contributions>
+    <bank_contributions>3.4</bank_contributions>
+    <notes>Данные за январь 2026</notes>
+  </record>
+</sales_data>

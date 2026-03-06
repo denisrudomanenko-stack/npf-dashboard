@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sales_data track="zk" description="Продажи в ЗК - зарплатные клиенты (ПДС/ДДС)">
+  <record>
+    <date>2026-03-01</date>
+    <dds_count>750</dds_count>
+    <dds_collections>12.5</dds_collections>
+    <notes>Продажи ЗК за март 2026</notes>
+  </record>
+  <record>
+    <date>2026-02-01</date>
+    <dds_count>680</dds_count>
+    <dds_collections>11.3</dds_collections>
+    <notes>Продажи ЗК за февраль 2026</notes>
+  </record>
+  <record>
+    <date>2026-01-01</date>
+    <dds_count>600</dds_count>
+    <dds_collections>10.0</dds_collections>
+    <notes>Продажи ЗК за январь 2026</notes>
+  </record>
+</sales_data>
